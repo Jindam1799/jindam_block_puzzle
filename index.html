@@ -89,10 +89,59 @@
         >
       </div>
 
-      <div id="quiz-modal" class="modal">
-        <div class="modal-content">
-          <h3>퀴즈</h3>
-          <p id="quiz-question">문제가 여기에 표시됩니다.</p>
+      <!-- ★ 퀴즈 팝업창 (힌트 기능 추가) ★ -->
+      <div id="quiz-modal" class="modal" style="z-index: 300">
+        <div
+          class="modal-content"
+          style="
+            border-color: #00ffcc;
+            box-shadow: 0 0 20px rgba(0, 255, 204, 0.3);
+          "
+        >
+          <h3 style="color: #00ffcc; margin-bottom: 15px">퀴즈!</h3>
+
+          <!-- 문제 (중국어 간체자) -->
+          <p
+            id="quiz-question"
+            style="
+              font-size: 25pt;
+              font-weight: bold;
+              color: #fff;
+              margin-bottom: 10px;
+            "
+          ></p>
+
+          <!-- 병음 힌트 버튼 및 텍스트 영역 -->
+          <button
+            id="hint-btn"
+            onclick="showHint()"
+            style="
+              background: rgba(0, 255, 204, 0.1);
+              border: 1px solid #00ffcc;
+              color: #00ffcc;
+              padding: 8px 15px;
+              border-radius: 8px;
+              cursor: pointer;
+              margin-bottom: 15px;
+              font-weight: bold;
+              transition: 0.2s;
+            "
+          >
+            💡 병음 힌트 보기
+          </button>
+          <p
+            id="quiz-pinyin"
+            style="
+              display: none;
+              color: #ff00ff;
+              font-size: 16pt;
+              margin-bottom: 20px;
+              font-style: italic;
+              letter-spacing: 2px;
+            "
+          ></p>
+
+          <!-- 보기 3개 -->
           <div id="quiz-options"></div>
           <p id="quiz-feedback" class="feedback"></p>
         </div>
