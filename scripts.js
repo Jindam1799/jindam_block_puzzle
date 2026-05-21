@@ -459,6 +459,8 @@ function startGame(mode) {
   }
 
   playBGM(mode);
+  const boardWrapper = document.getElementById('board-wrapper');
+  if (boardWrapper) boardWrapper.style.filter = 'none';
   board = Array(BOARD_SIZE)
     .fill(null)
     .map(() => Array(BOARD_SIZE).fill(0));
@@ -1014,6 +1016,9 @@ function showAllClearEffect() {
   }, 2000);
 }
 
+// ==========================================
+// ★ 게임 오버 조건 체크 및 가시성 개선 연출 ★
+// ==========================================
 function checkGameOverCondition() {
   let activeBlocksCount = 0;
   let placeableBlocksCount = 0;
@@ -1035,18 +1040,41 @@ function checkGameOverCondition() {
     }
   }
 
+  // 블록은 남아있는데 더 이상 둘 곳이 없는 경우 (게임 오버 트래킹)
   if (activeBlocksCount > 0 && placeableBlocksCount === 0) {
+    // AI 점수 성장 작동
     growAIRivals(gameMode);
+
+    // 1. 보드판 전체를 흐리게 만들고 타격감 차단 처리 효과 (CSS 필터 활용)
+    const boardWrapper = document.getElementById('board-wrapper');
+    if (boardWrapper) {
+      boardWrapper.style.transition = 'all 1s ease';
+      boardWrapper.style.filter = 'grayscale(0.6) brightness(0.5)';
+    }
+
+    // 2. 콤보 표시 자리에 "배치 불가" 경고 메시지를 띄워 안내 강화
+    const comboEl = document.getElementById('combo-display');
+    comboEl.innerHTML = `<span style="color: #ff003c; text-shadow: 0 0 15px #ff003c; font-size: 26pt; font-weight: 900;">배치 불가!<br><span style="font-size: 16pt; color: #fff;">NO SPACE</span></span>`;
+    comboEl.classList.add('show');
+
+    // 3. 바로 팝업을 띄우지 않고, 유저가 상황을 인지할 수 있도록 1.2초의 여유 시간을 준 뒤 모달 띄우기
     setTimeout(() => {
       playBGM('leaderboard');
+
+      // "배치 불가" 글씨 걷어내기
+      comboEl.classList.remove('show');
+
       const gameOverModal = document.getElementById('game-over-modal');
       const statsText = document.getElementById('game-over-stats');
-      statsText.innerHTML = `모드: <strong style="color:#ff00ff;">${gameMode.toUpperCase()}</strong><br>최종 점수: <strong style="color:#00ffcc;">${score}</strong> 점<br>최대 콤보: <strong style="color:#ffaf7b;">${maxComboThisRound}</strong> Combo`;
+      statsText.innerHTML = `
+                모드: <strong style="color:#ff00ff;">${gameMode.toUpperCase()}</strong><br>
+                최종 점수: <strong style="color:#00ffcc;">${score}</strong> 점<br>
+                최대 콤보: <strong style="color:#ffaf7b;">${maxComboThisRound}</strong> Combo
+            `;
       gameOverModal.classList.add('active');
-    }, 400);
+    }, 1200);
   }
 }
-
 // ==========================================
 // ★ Web Audio API 기반 커스텀 사운드 효과 ★
 // ==========================================
