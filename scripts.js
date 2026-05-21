@@ -51,9 +51,7 @@ function playNextTrack() {
     currentTrackIndex = (currentTrackIndex + 1) % currentPlaylist.length;
     playNextTrack();
   };
-  currentAudio
-    .play()
-    .catch((e) => console.log('Audio play blocked by browser.'));
+  currentAudio.play().catch((e) => console.log('Audio blocked.'));
 }
 
 function playBGM(type) {
@@ -61,9 +59,7 @@ function playBGM(type) {
   if (type === 'intro' || type === 'leaderboard') {
     currentAudio = AUDIO_SOURCES[type];
     currentAudio.loop = true;
-    currentAudio
-      .play()
-      .catch((e) => console.log('Audio play blocked by browser.'));
+    currentAudio.play().catch((e) => console.log('Audio blocked.'));
   } else {
     currentPlaylist = AUDIO_SOURCES[type];
     currentTrackIndex = Math.floor(Math.random() * currentPlaylist.length);
@@ -71,9 +67,6 @@ function playBGM(type) {
   }
 }
 
-// ==========================================
-// ★ 시작 및 로비 진입 ★
-// ==========================================
 function initStartScreen() {
   const startScreen = document.getElementById('start-screen');
   if (startScreen.style.display !== 'none') {
@@ -88,22 +81,60 @@ document
 document.addEventListener('keydown', initStartScreen);
 
 // ==========================================
-// ★ AI 가상 플레이어 (라이벌) 시스템 ★
+// ★ 랭킹 (로컬스토리지) 시스템 ★
 // ==========================================
+function saveRanking() {
+  const nicknameInput = document.getElementById('nickname-input');
+  const nickname = nicknameInput.value.trim();
+
+  if (!nickname) {
+    document.getElementById('alert-modal').classList.add('active');
+    return;
+  }
+
+  const newRecord = {
+    name: nickname,
+    score: score,
+    combo: maxComboThisRound,
+    date: new Date().toLocaleDateString(),
+    isPlayer: true,
+  };
+  let playerRankings =
+    JSON.parse(localStorage.getItem(`player_rankings_${gameMode}`)) || [];
+  playerRankings.push(newRecord);
+  playerRankings.sort((a, b) => b.score - a.score);
+  playerRankings = playerRankings.slice(0, 50);
+  localStorage.setItem(
+    `player_rankings_${gameMode}`,
+    JSON.stringify(playerRankings),
+  );
+
+  document.getElementById('game-over-modal').classList.remove('active');
+  showRankingScreen(gameMode);
+}
+
+function closeAlertModal() {
+  document.getElementById('alert-modal').classList.remove('active');
+  document.getElementById('nickname-input').focus();
+}
+
+function showRankingScreen(modeToOpen) {
+  document.getElementById('lobby-screen').style.display = 'none';
+  document.getElementById('game-container').style.display = 'none';
+  document.getElementById('ranking-screen').style.display = 'flex';
+  playBGM('leaderboard');
+  renderRankingList(modeToOpen);
+}
+
 const AI_RIVALS = {
   normal: [
-    { name: '여포', baseScore: 85000, combo: 24, isPlayer: false },
-    { name: '김선생', baseScore: 72000, combo: 18, isPlayer: false },
+    { name: '제갈공명', baseScore: 85000, combo: 24, isPlayer: false },
+    { name: '이소룡', baseScore: 72000, combo: 18, isPlayer: false },
   ],
   hell: [
+    { name: '사마의', baseScore: 250000, combo: 35, isPlayer: false },
     {
-      name: '동탁',
-      baseScore: 250000,
-      combo: 35,
-      isPlayer: false,
-    },
-    {
-      name: '김선생',
+      name: '진시황',
       baseScore: 210000,
       combo: 28,
       isPlayer: false,
@@ -111,23 +142,19 @@ const AI_RIVALS = {
   ],
 };
 
-// 게임 종료 시 AI 성장 트리거 (야금야금 쫓아오게 만듦)
 function growAIRivals(mode) {
   let rivals = JSON.parse(localStorage.getItem(`ai_rivals_${mode}`));
-  if (!rivals) {
+  if (!rivals)
     rivals = AI_RIVALS[mode].map((r) => ({ ...r, currentScore: r.baseScore }));
-  } else {
+  else {
     rivals.forEach((r) => {
-      // 한 판 끝날 때마다 150 ~ 450 점씩 아주 미세하게 성장
-      // 유저가 압도적 점수로 1등 시, AI가 따라잡으려면 수 판~십수 판 소요됨
       r.currentScore += Math.floor(Math.random() * 300) + 150;
-      if (Math.random() < 0.05) r.combo += 1; // 5% 확률로 콤보도 증가
+      if (Math.random() < 0.05) r.combo += 1;
     });
   }
   localStorage.setItem(`ai_rivals_${mode}`, JSON.stringify(rivals));
 }
 
-// 랭킹 출력용 AI 데이터 호출
 function getAIRivals(mode) {
   let rivals = JSON.parse(localStorage.getItem(`ai_rivals_${mode}`));
   if (!rivals) {
@@ -142,46 +169,6 @@ function getAIRivals(mode) {
   }));
 }
 
-// ==========================================
-// ★ 랭킹 (로컬스토리지) 저장 시스템 ★
-// ==========================================
-function saveRanking() {
-  const nickname =
-    document.getElementById('nickname-input').value.trim() || '무명장수';
-  // ★ 게임오버 시점이 아닌, 게임 중 기록된 '최대 콤보' 저장 ★
-  const newRecord = {
-    name: nickname,
-    score: score,
-    combo: maxComboThisRound,
-    date: new Date().toLocaleDateString(),
-    isPlayer: true,
-  };
-
-  // 플레이어 랭킹만 따로 저장
-  let playerRankings =
-    JSON.parse(localStorage.getItem(`player_rankings_${gameMode}`)) || [];
-  playerRankings.push(newRecord);
-  playerRankings.sort((a, b) => b.score - a.score);
-  playerRankings = playerRankings.slice(0, 50); // 넉넉히 보관
-
-  localStorage.setItem(
-    `player_rankings_${gameMode}`,
-    JSON.stringify(playerRankings),
-  );
-
-  document.getElementById('game-over-modal').classList.remove('active');
-  showRankingScreen(gameMode);
-}
-
-function showRankingScreen(modeToOpen) {
-  document.getElementById('lobby-screen').style.display = 'none';
-  document.getElementById('game-container').style.display = 'none';
-  document.getElementById('ranking-screen').style.display = 'flex';
-
-  playBGM('leaderboard');
-  renderRankingList(modeToOpen);
-}
-
 function renderRankingList(mode) {
   document
     .getElementById('tab-normal')
@@ -192,42 +179,34 @@ function renderRankingList(mode) {
 
   const listEl = document.getElementById('ranking-list');
   listEl.innerHTML = '';
-
-  // 플레이어 기록과 AI 라이벌 기록을 합쳐서 정렬
   let playerRankings =
     JSON.parse(localStorage.getItem(`player_rankings_${mode}`)) || [];
   let aiRankings = getAIRivals(mode);
 
   let combinedRankings = [...playerRankings, ...aiRankings];
   combinedRankings.sort((a, b) => b.score - a.score);
-  combinedRankings = combinedRankings.slice(0, 15); // Top 15 출력
+  combinedRankings = combinedRankings.slice(0, 15);
+
+  if (combinedRankings.length === 0) {
+    listEl.innerHTML =
+      "<li style='text-align:center; padding: 20px; color: #888;'>등록된 랭킹이 없습니다.</li>";
+    return;
+  }
 
   combinedRankings.forEach((record, index) => {
     const li = document.createElement('li');
     li.className = 'ranking-item';
-
-    // 메달 및 순위별 색상 세팅
-    let rankColor = '#fff';
-    if (index === 0)
-      rankColor = '#ffd700'; // 1등 금
-    else if (index === 1)
-      rankColor = '#c0c0c0'; // 2등 은
-    else if (index === 2) rankColor = '#cd7f32'; // 3등 동
-
-    // 플레이어 본인(유저)일 경우 네온 컬러로 하이라이트
+    let rankColor =
+      index === 0
+        ? '#ffd700'
+        : index === 1
+          ? '#c0c0c0'
+          : index === 2
+            ? '#cd7f32'
+            : '#fff';
     const nameColor = record.isPlayer ? '#00ffcc' : '#888';
     const nameShadow = record.isPlayer ? 'text-shadow: 0 0 10px #00ffcc;' : '';
-
-    li.innerHTML = `
-            <div>
-                <span style="display:inline-block; width: 35px; color:${rankColor}; font-weight:900; font-size:15pt;">${index + 1}.</span> 
-                <span style="font-size: 13pt; font-weight: bold; color: ${nameColor}; ${nameShadow}">${record.name}</span>
-            </div>
-            <div class="rank-info">
-                <span class="rank-score" style="color:${rankColor};">${record.score.toLocaleString()} 점</span>
-                <span class="rank-combo">MAX ${record.combo} COMBO</span>
-            </div>
-        `;
+    li.innerHTML = `<div><span style="display:inline-block; width: 35px; color:${rankColor}; font-weight:900; font-size:15pt;">${index + 1}.</span> <span style="font-size: 13pt; font-weight: bold; color: ${nameColor}; ${nameShadow}">${record.name}</span></div><div class="rank-info"><span class="rank-score" style="color:${rankColor};">${record.score.toLocaleString()} 점</span><span class="rank-combo">MAX ${record.combo} COMBO</span></div>`;
     listEl.appendChild(li);
   });
 }
@@ -239,7 +218,7 @@ function returnToLobby() {
 }
 
 // ==========================================
-// ★ 게임 코어 시스템 및 블록 분류 ★
+// ★ 게임 코어 시스템 ★
 // ==========================================
 const BOARD_SIZE = 8;
 let board = Array(BOARD_SIZE)
@@ -250,12 +229,10 @@ let currentDockBlocks = [null, null, null];
 let activeDragIndex = null;
 let isDragging = false;
 let gameMode = 'normal';
-
 let currentCombo = 0;
-let maxComboThisRound = 0; // ★ 이번 게임 최고 콤보 추적 변수
+let maxComboThisRound = 0;
 let linesClearedThisRound = 0;
 
-// [1] 좋은 블록
 const GOOD_BLOCKS = [
   [[1, 1, 1, 1]],
   [[1], [1], [1], [1]],
@@ -263,8 +240,9 @@ const GOOD_BLOCKS = [
     [1, 1],
     [1, 1],
   ],
-  [[1, 1, 1, 1, 1]],
-  [[1], [1], [1], [1], [1]],
+
+  [[1, 1, 1]],
+  [[1], [1], [1]],
   [
     [1, 1, 1],
     [1, 1, 1],
@@ -275,13 +253,59 @@ const GOOD_BLOCKS = [
     [1, 1],
   ],
   [
-    [1, 1, 1],
-    [1, 1, 1],
-    [1, 1, 1],
+    [1, 1],
+    [0, 1],
+  ],
+  [
+    [1, 1],
+    [1, 0],
+  ],
+  [
+    [0, 1],
+    [1, 1],
+  ],
+  [
+    [1, 0],
+    [1, 1],
   ],
 ];
-// [2] 노말 블록
 const NORMAL_BLOCKS = [
+  [
+    [1, 1, 1],
+    [1, 1, 1],
+    [1, 1, 1],
+  ],
+  [
+    [1, 1, 1],
+    [0, 1, 0],
+  ],
+  [
+    [0, 1, 0],
+    [1, 1, 1],
+  ],
+  [
+    [1, 0],
+    [1, 1],
+    [1, 0],
+  ],
+  [
+    [0, 1],
+    [1, 1],
+    [0, 1],
+  ],
+  [
+    [1, 0],
+    [1, 0],
+    [1, 1],
+  ],
+  [
+    [0, 1],
+    [0, 1],
+    [1, 1],
+  ],
+  [[1, 1, 1, 1, 1]],
+  [[1], [1], [1], [1], [1]],
+
   [
     [1, 1, 1],
     [1, 0, 0],
@@ -300,21 +324,14 @@ const NORMAL_BLOCKS = [
     [0, 1],
     [1, 1],
   ],
+
   [
-    [1, 1, 1],
-    [0, 1, 0],
-  ],
-  [
-    [0, 1, 0],
-    [1, 1, 1],
-  ],
-  [
-    [1, 0],
+    [0, 1],
     [1, 1],
     [1, 0],
   ],
   [
-    [0, 1],
+    [1, 0],
     [1, 1],
     [0, 1],
   ],
@@ -327,7 +344,6 @@ const NORMAL_BLOCKS = [
     [1, 1, 0],
   ],
 ];
-// [3] 하드 블록
 const HARD_BLOCKS = [
   [
     [1, 1, 1],
@@ -398,13 +414,12 @@ function startGame(mode) {
   }
 
   playBGM(mode);
-
   board = Array(BOARD_SIZE)
     .fill(null)
     .map(() => Array(BOARD_SIZE).fill(0));
   score = 0;
   currentCombo = 0;
-  maxComboThisRound = 0; // 최고 콤보 리셋
+  maxComboThisRound = 0;
   linesClearedThisRound = 0;
 
   initBoardHTML();
@@ -443,12 +458,17 @@ function renderBoard() {
   document.getElementById('score').innerText = score;
 }
 
+// ==========================================
+// ★ 퀴즈 시스템 (중복 클릭 방지 & 정답/오답 사운드 추가) ★
+// ==========================================
 function triggerNewQuiz() {
   const modal = document.getElementById('quiz-modal');
   const feedback = document.getElementById('quiz-feedback');
   feedback.innerText = '';
+
   const quiz = QUIZ_DATA[Math.floor(Math.random() * QUIZ_DATA.length)];
   document.getElementById('quiz-question').innerText = quiz.q;
+
   const optionsContainer = document.getElementById('quiz-options');
   optionsContainer.innerHTML = '';
 
@@ -457,7 +477,12 @@ function triggerNewQuiz() {
     btn.className = 'option-btn';
     btn.innerText = opt;
     btn.onclick = () => {
+      // 더블 클릭 방지를 위해 클릭 즉시 모든 버튼 비활성화
+      const allBtns = optionsContainer.querySelectorAll('button');
+      allBtns.forEach((b) => (b.disabled = true));
+
       if (opt === quiz.a) {
+        playCorrectSound(); // ★ 정답 효과음 재생
         feedback.innerText = '정답입니다!';
         feedback.style.color = '#00ff00';
         setTimeout(() => {
@@ -465,6 +490,7 @@ function triggerNewQuiz() {
           generateDockBlocks();
         }, 700);
       } else {
+        playWrongSound(); // ★ 오답 효과음 재생
         feedback.innerText =
           gameMode === 'hell'
             ? '오답! 장애물 최대 6개 투하!'
@@ -481,7 +507,9 @@ function triggerNewQuiz() {
     };
     optionsContainer.appendChild(btn);
   });
+
   modal.classList.add('active');
+  playQuizPopupSound(); // 퀴즈 등장 효과음 재생
 }
 
 function spawnObstacleStone(mode) {
@@ -526,7 +554,6 @@ function spawnObstacleStone(mode) {
         if (cluster.length >= clusterSize) break;
       }
     }
-
     for (let cell of cluster) {
       let durability = Math.floor(Math.random() * 2) + 2;
       board[cell.r][cell.c] = 10 + durability;
@@ -538,7 +565,6 @@ function spawnObstacleStone(mode) {
 
 function generateDockBlocks() {
   const colorPool = [1, 2, 3].sort(() => Math.random() - 0.5);
-
   let normalChance = 0;
   let hardChance = 0;
 
@@ -673,7 +699,6 @@ function setupTouchEvents() {
       handleStart(e.clientX, e.clientY, slot),
     );
   });
-
   window.addEventListener(
     'touchmove',
     (e) => {
@@ -807,10 +832,11 @@ function clearFullLines(onComplete) {
   const totalCleared = rowsToClear.length + colsToClear.length;
 
   if (totalCleared > 0) {
-    currentCombo += totalCleared;
-    // ★ 최고 콤보 갱신 로직 ★
-    maxComboThisRound = Math.max(maxComboThisRound, currentCombo);
+    playClearSound(); // ★ 블록 제거 타격감 사운드 재생
 
+    let previousCombo = currentCombo;
+    currentCombo += totalCleared;
+    maxComboThisRound = Math.max(maxComboThisRound, currentCombo);
     linesClearedThisRound += totalCleared;
 
     let shakeIntensity = 1 + currentCombo * 0.5;
@@ -873,6 +899,9 @@ function clearFullLines(onComplete) {
 
       showComboEffect(totalCleared, currentCombo);
 
+      // ★ 다중 라인 제거 시 연속 아르페지오 사운드 재생 ★
+      playSequentialComboSounds(previousCombo + 1, totalCleared);
+
       let isAllClear = true;
       for (let r = 0; r < BOARD_SIZE; r++) {
         for (let c = 0; c < BOARD_SIZE; c++) {
@@ -903,7 +932,6 @@ function showComboEffect(linesCleared, finalCombo) {
       ? `<span class="bonus-lines">+${linesCleared} LINES!</span>`
       : '';
   comboEl.innerHTML = `${bonusText}${finalCombo} COMBO!`;
-
   comboEl.classList.remove('show');
   void comboEl.offsetWidth;
   comboEl.classList.add('show');
@@ -917,12 +945,10 @@ function showAllClearEffect() {
   acEl.classList.remove('show');
   void acEl.offsetWidth;
   acEl.classList.add('show');
-
   const flash = document.getElementById('light-flash-overlay');
   flash.classList.remove('flash-active');
   void flash.offsetWidth;
   flash.classList.add('flash-active');
-
   setTimeout(() => {
     acEl.classList.remove('show');
   }, 2000);
@@ -950,21 +976,120 @@ function checkGameOverCondition() {
   }
 
   if (activeBlocksCount > 0 && placeableBlocksCount === 0) {
-    // ★ 게임 오버 시 AI 점수 몰래 성장 ★
     growAIRivals(gameMode);
-
     setTimeout(() => {
       playBGM('leaderboard');
       const gameOverModal = document.getElementById('game-over-modal');
       const statsText = document.getElementById('game-over-stats');
-
-      // ★ 게임오버 시, '최종 콤보'가 아닌 기록된 '최대 콤보'를 출력 ★
-      statsText.innerHTML = `
-                모드: <strong style="color:#ff00ff;">${gameMode.toUpperCase()}</strong><br>
-                최종 점수: <strong style="color:#00ffcc;">${score}</strong> 점<br>
-                최대 콤보: <strong style="color:#ffaf7b;">${maxComboThisRound}</strong> Combo
-            `;
+      statsText.innerHTML = `모드: <strong style="color:#ff00ff;">${gameMode.toUpperCase()}</strong><br>최종 점수: <strong style="color:#00ffcc;">${score}</strong> 점<br>최대 콤보: <strong style="color:#ffaf7b;">${maxComboThisRound}</strong> Combo`;
       gameOverModal.classList.add('active');
     }, 400);
   }
+}
+
+// ==========================================
+// ★ Web Audio API 기반 커스텀 사운드 효과 ★
+// ==========================================
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+const scaleFrequencies = [
+  261.63, 293.66, 329.63, 349.23, 392.0, 440.0, 493.88, 523.25,
+]; // 도레미파솔라시도
+
+// 1. 퀴즈 등장 효과음 (띠로롱~) - 볼륨 2배 증가
+function playQuizPopupSound() {
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(400, audioCtx.currentTime);
+  osc.frequency.exponentialRampToValueAtTime(800, audioCtx.currentTime + 0.15);
+  gain.gain.setValueAtTime(1.0, audioCtx.currentTime); // 볼륨 1.0으로 상향
+  gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.3);
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+  osc.start();
+  osc.stop(audioCtx.currentTime + 0.3);
+}
+
+// 2. 블록 제거 타격 효과음 (파직!) - 볼륨 2.4배 증가
+function playClearSound() {
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = 'square';
+  osc.frequency.setValueAtTime(150, audioCtx.currentTime);
+  osc.frequency.exponentialRampToValueAtTime(40, audioCtx.currentTime + 0.15);
+  gain.gain.setValueAtTime(1.2, audioCtx.currentTime); // 볼륨 1.2로 상향 (강한 타격감)
+  gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.2);
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+  osc.start();
+  osc.stop(audioCtx.currentTime + 0.2);
+}
+
+// 3. 다중 라인 제거 시 아르페지오 (도-레-미 연속 재생) - 볼륨 증가
+function playSequentialComboSounds(startCombo, linesCleared) {
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+
+  for (let i = 0; i < linesCleared; i++) {
+    const currentComboCount = startCombo + i;
+    const scaleIndex = (currentComboCount - 1) % 8;
+    const octaveMultiplier = Math.pow(
+      2,
+      Math.floor((currentComboCount - 1) / 8),
+    );
+    const freq = scaleFrequencies[scaleIndex] * octaveMultiplier;
+
+    const oscillator = audioCtx.createOscillator();
+    const gainNode = audioCtx.createGain();
+    oscillator.type = 'sawtooth'; // 레트로 오락실 느낌 파형
+
+    // 0.15초 간격으로 스케줄링하여 아르페지오 연출
+    const startTime = audioCtx.currentTime + i * 0.15;
+    const stopTime = startTime + 0.4;
+
+    oscillator.frequency.setValueAtTime(freq, startTime);
+
+    gainNode.gain.setValueAtTime(0.0, audioCtx.currentTime); // 시작 전엔 음소거
+    gainNode.gain.setValueAtTime(1.0, startTime); // 볼륨 1.0으로 상향
+    gainNode.gain.exponentialRampToValueAtTime(0.001, stopTime);
+
+    oscillator.connect(gainNode);
+    gainNode.connect(audioCtx.destination);
+    oscillator.start(startTime);
+    oscillator.stop(stopTime);
+  }
+}
+
+// 4. 정답 효과음 (밝고 경쾌한 상승음)
+function playCorrectSound() {
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = 'triangle';
+  osc.frequency.setValueAtTime(440, audioCtx.currentTime); // A4
+  osc.frequency.setValueAtTime(554.37, audioCtx.currentTime + 0.1); // C#5
+  osc.frequency.setValueAtTime(659.25, audioCtx.currentTime + 0.2); // E5
+  gain.gain.setValueAtTime(1.0, audioCtx.currentTime); // 볼륨 1.0
+  gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.4);
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+  osc.start();
+  osc.stop(audioCtx.currentTime + 0.4);
+}
+
+// 5. 오답 효과음 (둔탁하고 하락하는 경고음)
+function playWrongSound() {
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = 'sawtooth';
+  osc.frequency.setValueAtTime(200, audioCtx.currentTime); // 낮은 주파수
+  osc.frequency.exponentialRampToValueAtTime(50, audioCtx.currentTime + 0.4);
+  gain.gain.setValueAtTime(1.0, audioCtx.currentTime); // 볼륨 1.0
+  gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.4);
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+  osc.start();
+  osc.stop(audioCtx.currentTime + 0.4);
 }
