@@ -196,6 +196,8 @@ function renderRankingList(mode) {
   combinedRankings.forEach((record, index) => {
     const li = document.createElement('li');
     li.className = 'ranking-item';
+
+    // 등수별 메달 색상
     let rankColor =
       index === 0
         ? '#ffd700'
@@ -204,9 +206,23 @@ function renderRankingList(mode) {
           : index === 2
             ? '#cd7f32'
             : '#fff';
-    const nameColor = record.isPlayer ? '#00ffcc' : '#888';
-    const nameShadow = record.isPlayer ? 'text-shadow: 0 0 10px #00ffcc;' : '';
-    li.innerHTML = `<div><span style="display:inline-block; width: 35px; color:${rankColor}; font-weight:900; font-size:15pt;">${index + 1}.</span> <span style="font-size: 13pt; font-weight: bold; color: ${nameColor}; ${nameShadow}">${record.name}</span></div><div class="rank-info"><span class="rank-score" style="color:${rankColor};">${record.score.toLocaleString()} 점</span><span class="rank-combo">MAX ${record.combo} COMBO</span></div>`;
+
+    // ★ AI 가독성 개선: 기존 #888에서 밝은 은회색(#e0e0e0)으로 변경 및 그림자 추가 ★
+    const nameColor = record.isPlayer ? '#00ffcc' : '#e0e0e0';
+    const nameShadow = record.isPlayer
+      ? 'text-shadow: 0 0 10px #00ffcc;'
+      : 'text-shadow: 0 0 5px rgba(255,255,255,0.4);'; // AI에게도 부드러운 그림자 부여
+
+    li.innerHTML = `
+        <div>
+            <span style="display:inline-block; width: 35px; color:${rankColor}; font-weight:900; font-size:15pt;">${index + 1}.</span> 
+            <span style="font-size: 13pt; font-weight: bold; color: ${nameColor}; ${nameShadow}">${record.name}</span>
+        </div>
+        <div class="rank-info">
+            <span class="rank-score" style="color:${rankColor};">${record.score.toLocaleString()} 점</span>
+            <span class="rank-combo">MAX ${record.combo} COMBO</span>
+        </div>
+    `;
     listEl.appendChild(li);
   });
 }
@@ -252,24 +268,24 @@ const GOOD_BLOCKS = [
     [1, 1],
     [1, 1],
   ],
-  [
-    [1, 1],
-    [0, 1],
-  ],
-  [
-    [1, 1],
-    [1, 0],
-  ],
-  [
-    [0, 1],
-    [1, 1],
-  ],
-  [
-    [1, 0],
-    [1, 1],
-  ],
 ];
 const NORMAL_BLOCKS = [
+  [
+    [1, 1],
+    [0, 1],
+  ],
+  [
+    [1, 1],
+    [1, 0],
+  ],
+  [
+    [0, 1],
+    [1, 1],
+  ],
+  [
+    [1, 0],
+    [1, 1],
+  ],
   [
     [1, 1, 1],
     [1, 1, 1],
