@@ -148,7 +148,10 @@ function growAIRivals(mode) {
     rivals = AI_RIVALS[mode].map((r) => ({ ...r, currentScore: r.baseScore }));
   else {
     rivals.forEach((r) => {
-      r.currentScore += Math.floor(Math.random() * 300) + 150;
+      // ★ 1의 자리를 0으로 고정(* 10)하고, 증가폭을 대폭 상향 (2500점 ~ 7490점) ★
+      r.currentScore += (Math.floor(Math.random() * 500) + 250) * 10;
+
+      // 콤보 증가 확률은 기존 유지 (5%)
       if (Math.random() < 0.05) r.combo += 1;
     });
   }
