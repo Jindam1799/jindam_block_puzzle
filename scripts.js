@@ -276,6 +276,7 @@ let gameMode = 'normal';
 let currentCombo = 0;
 let maxComboThisRound = 0;
 let linesClearedThisRound = 0;
+let currentQuiz = null; // 현재 출제된 문제를 저장할 변수
 
 const GOOD_BLOCKS = [
   [[1, 1, 1, 1]],
@@ -503,30 +504,39 @@ function renderBoard() {
 }
 
 // ==========================================
-// ★ 퀴즈 시스템 (중복 클릭 방지 & 정답/오답 사운드 추가) ★
+// ★ 퀴즈 시스템 (힌트 보기 및 중복 클릭 방지) ★
 // ==========================================
 function triggerNewQuiz() {
   const modal = document.getElementById('quiz-modal');
   const feedback = document.getElementById('quiz-feedback');
+  const hintBtn = document.getElementById('hint-btn');
+  const pinyinDisplay = document.getElementById('quiz-pinyin');
+
   feedback.innerText = '';
 
-  const quiz = QUIZ_DATA[Math.floor(Math.random() * QUIZ_DATA.length)];
-  document.getElementById('quiz-question').innerText = quiz.q;
+  // 팝업이 뜰 때마다 힌트 상태 초기화
+  hintBtn.style.display = 'inline-block';
+  pinyinDisplay.style.display = 'none';
+
+  // data.js의 데이터 포맷에 맞게 출제
+  currentQuiz = QUIZ_DATA[Math.floor(Math.random() * QUIZ_DATA.length)];
+  document.getElementById('quiz-question').innerText = currentQuiz.q;
+  pinyinDisplay.innerText = currentQuiz.pinyin; // 병음 데이터 세팅
 
   const optionsContainer = document.getElementById('quiz-options');
   optionsContainer.innerHTML = '';
 
-  quiz.options.forEach((opt) => {
+  currentQuiz.options.forEach((opt) => {
     const btn = document.createElement('button');
     btn.className = 'option-btn';
     btn.innerText = opt;
     btn.onclick = () => {
-      // 더블 클릭 방지를 위해 클릭 즉시 모든 버튼 비활성화
+      // 더블 클릭 방지
       const allBtns = optionsContainer.querySelectorAll('button');
       allBtns.forEach((b) => (b.disabled = true));
 
-      if (opt === quiz.a) {
-        playCorrectSound(); // ★ 정답 효과음 재생
+      if (opt === currentQuiz.a) {
+        playCorrectSound();
         feedback.innerText = '정답입니다!';
         feedback.style.color = '#00ff00';
         setTimeout(() => {
@@ -534,7 +544,7 @@ function triggerNewQuiz() {
           generateDockBlocks();
         }, 700);
       } else {
-        playWrongSound(); // ★ 오답 효과음 재생
+        playWrongSound();
         feedback.innerText =
           gameMode === 'hell'
             ? '오답! 장애물 최대 6개 투하!'
@@ -553,7 +563,13 @@ function triggerNewQuiz() {
   });
 
   modal.classList.add('active');
-  playQuizPopupSound(); // 퀴즈 등장 효과음 재생
+  playQuizPopupSound();
+}
+
+// 힌트 버튼 클릭 시 실행되는 함수
+function showHint() {
+  document.getElementById('hint-btn').style.display = 'none';
+  document.getElementById('quiz-pinyin').style.display = 'block';
 }
 
 function spawnObstacleStone(mode) {
