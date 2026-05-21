@@ -144,17 +144,42 @@ const AI_RIVALS = {
 
 function growAIRivals(mode) {
   let rivals = JSON.parse(localStorage.getItem(`ai_rivals_${mode}`));
-  if (!rivals)
-    rivals = AI_RIVALS[mode].map((r) => ({ ...r, currentScore: r.baseScore }));
-  else {
-    rivals.forEach((r) => {
-      // ★ 1의 자리를 0으로 고정(* 10)하고, 증가폭을 대폭 상향 (2500점 ~ 7490점) ★
-      r.currentScore += (Math.floor(Math.random() * 500) + 250) * 10;
 
-      // 콤보 증가 확률은 기존 유지 (5%)
-      if (Math.random() < 0.05) r.combo += 1;
+  if (!rivals) {
+    rivals = AI_RIVALS[mode].map((r) => ({ ...r, currentScore: r.baseScore }));
+  } else {
+    // 1. 현재 플레이어의 최고 점수 가져오기
+    let playerRankings =
+      JSON.parse(localStorage.getItem(`player_rankings_${mode}`)) || [];
+    let playerBestScore =
+      playerRankings.length > 0 ? playerRankings[0].score : 0;
+
+    // index 0: 1등 AI (제갈공명 / 사마의)
+    // index 1: 2등 AI (이소룡 / 진시황)
+    rivals.forEach((r, index) => {
+      let playChance = 0;
+      let scoreIncrease = 0;
+
+      if (index === 0) {
+        // [1등 AI 성향] 여유 10% / 분노 40% (점수 증가폭: 2500 ~ 7490)
+        playChance = r.currentScore > playerBestScore ? 0.1 : 0.4;
+        scoreIncrease = (Math.floor(Math.random() * 500) + 250) * 10;
+      } else {
+        // [2등 AI 성향] 꾸준함 15% / 분노 30% (점수 증가폭: 1500 ~ 4490 - 조금씩 오름)
+        playChance = r.currentScore > playerBestScore ? 0.15 : 0.3;
+        scoreIncrease = (Math.floor(Math.random() * 300) + 150) * 10;
+      }
+
+      // 확률에 당첨되었을 때만(AI가 게임을 했을 때만) 점수 증가
+      if (Math.random() < playChance) {
+        r.currentScore += scoreIncrease;
+
+        // 5% 확률로 최대 콤보 기록도 갱신
+        if (Math.random() < 0.05) r.combo += 1;
+      }
     });
   }
+
   localStorage.setItem(`ai_rivals_${mode}`, JSON.stringify(rivals));
 }
 
