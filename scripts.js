@@ -1,676 +1,1155 @@
-* {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
-  user-select: none;
-  -webkit-user-select: none;
-  touch-action: none;
-}
-body {
-  background: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
-  font-family: 'Malgun Gothic', sans-serif;
-  color: #fff;
-  overflow: hidden;
-  min-height: 100vh;
-  transition: background 0.5s ease;
-}
+// ==========================================
+// ★ 방향키 스크롤 방지 로직 ★
+// ==========================================
+window.addEventListener(
+  'keydown',
+  function (e) {
+    if (
+      ['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].indexOf(
+        e.code,
+      ) > -1
+    ) {
+      e.preventDefault();
+    }
+  },
+  { passive: false },
+);
 
-#light-flash-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
-  z-index: 999;
-  display: none;
-}
-@keyframes flashLight {
-  0% {
-    background-color: rgba(255, 255, 255, 0);
-  }
-  10% {
-    background-color: rgba(255, 255, 255, 0.9);
-  }
-  100% {
-    background-color: rgba(255, 255, 255, 0);
-  }
-}
-.flash-active {
-  display: block !important;
-  animation: flashLight 0.6s ease-out forwards;
-}
+// ==========================================
+// ★ 오디오(BGM) 관리 시스템 ★
+// ==========================================
+const AUDIO_SOURCES = {
+  intro: new Audio('intro.mp3'),
+  leaderboard: new Audio('leaderboard.mp3'),
+  normal: [
+    'block_bgm.mp3',
+    'block_bgm2.mp3',
+    'block_bgm3.mp3',
+    'block_bgm4.mp3',
+  ].map((src) => new Audio(src)),
+  hell: [
+    'hell_bgm1.mp3',
+    'hell_bgm2.mp3',
+    'hell_bgm3.mp3',
+    'hell_bgm4.mp3',
+  ].map((src) => new Audio(src)),
+};
+let currentAudio = null;
+let currentPlaylist = [];
+let currentTrackIndex = 0;
 
-#start-screen {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background: #000;
-  z-index: 1000;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  text-align: center;
-  cursor: pointer;
-}
-.blink-text {
-  font-size: 20pt;
-  color: #fff;
-  text-shadow: 0 0 15px #fff;
-  animation: blink 1.5s infinite;
-  line-height: 1.5;
-}
-@keyframes blink {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.3;
+function stopAllBGM() {
+  if (currentAudio) {
+    currentAudio.pause();
+    currentAudio.currentTime = 0;
   }
 }
 
-#lobby-screen,
-#ranking-screen {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: center;
-  background: rgba(15, 12, 41, 0.95);
-  z-index: 200;
-  backdrop-filter: blur(10px);
-}
-.lobby-title {
-  font-size: 32pt;
-  font-weight: 900;
-  color: #00ffcc;
-  text-shadow: 0 0 20px #00ffcc;
-  margin-bottom: 10px;
-  text-align: center;
-}
-.lobby-subtitle {
-  font-size: 14pt;
-  color: #ff00ff;
-  text-shadow: 0 0 10px #ff00ff;
-  margin-bottom: 40px;
-}
-.mode-buttons {
-  display: flex;
-  flex-direction: column;
-  gap: 15px;
-  width: 80%;
-  max-width: 320px;
-}
-.mode-btn {
-  padding: 18px;
-  border-radius: 12px;
-  border: none;
-  font-size: 15pt;
-  font-weight: bold;
-  cursor: pointer;
-  color: white;
-  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.5);
-  transition: transform 0.1s;
-}
-.mode-btn span {
-  font-size: 10pt;
-  font-weight: normal;
-  opacity: 0.8;
-}
-.mode-btn:active {
-  transform: scale(0.95);
-}
-.normal-btn {
-  background: linear-gradient(135deg, #00f2fe, #4facfe);
-  border: 2px solid #fff;
-}
-.hell-btn {
-  background: linear-gradient(135deg, #ff0844, #ffb199);
-  border: 2px solid #fff;
-  box-shadow: 0 0 20px rgba(255, 8, 68, 0.6);
-}
-.rank-btn {
-  background: linear-gradient(135deg, #f6d365, #fda085);
-  border: 2px solid #fff;
-  margin-top: 10px;
-  color: #333;
+function playNextTrack() {
+  currentAudio = currentPlaylist[currentTrackIndex];
+  currentAudio.onended = () => {
+    currentTrackIndex = (currentTrackIndex + 1) % currentPlaylist.length;
+    playNextTrack();
+  };
+  currentAudio.play().catch((e) => console.log('Audio blocked.'));
 }
 
-.ranking-tabs {
-  display: flex;
-  width: 90%;
-  max-width: 400px;
-  margin-bottom: 15px;
-  border-radius: 8px;
-  overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-}
-.tab-btn {
-  flex: 1;
-  padding: 12px;
-  background: rgba(0, 0, 0, 0.5);
-  color: #888;
-  border: none;
-  font-size: 12pt;
-  font-weight: bold;
-  cursor: pointer;
-  transition: 0.3s;
-}
-.tab-btn.active {
-  background: rgba(0, 255, 204, 0.2);
-  color: #00ffcc;
-  box-shadow: inset 0 -3px 0 #00ffcc;
-}
-.ranking-list-container {
-  width: 90%;
-  max-width: 400px;
-  height: 50vh;
-  overflow-y: auto;
-  background: rgba(0, 0, 0, 0.6);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 10px;
-  padding: 10px;
-  pointer-events: auto;
-  touch-action: pan-y;
-}
-#ranking-list {
-  list-style: none;
-  padding: 0;
-}
-.ranking-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 12px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-}
-.ranking-item:nth-child(1) {
-  color: #ffd700;
-  font-weight: bold;
-  text-shadow: 0 0 10px #ffd700;
-  background: rgba(255, 215, 0, 0.1);
-}
-.ranking-item:nth-child(2) {
-  color: #c0c0c0;
-  font-weight: bold;
-  text-shadow: 0 0 5px #c0c0c0;
-}
-.ranking-item:nth-child(3) {
-  color: #cd7f32;
-  font-weight: bold;
-  text-shadow: 0 0 5px #cd7f32;
-}
-.rank-info {
-  display: flex;
-  flex-direction: column;
-  text-align: right;
-}
-.rank-score {
-  font-size: 14pt;
-  color: #fff;
-}
-.rank-combo {
-  font-size: 10pt;
-  color: #ff00ff;
+function playBGM(type) {
+  stopAllBGM();
+  if (type === 'intro' || type === 'leaderboard') {
+    currentAudio = AUDIO_SOURCES[type];
+    currentAudio.loop = true;
+    currentAudio.play().catch((e) => console.log('Audio blocked.'));
+  } else {
+    currentPlaylist = AUDIO_SOURCES[type];
+    currentTrackIndex = Math.floor(Math.random() * currentPlaylist.length);
+    playNextTrack();
+  }
 }
 
-#nickname-input {
-  width: 100%;
-  padding: 15px;
-  margin-bottom: 15px;
-  border: 2px solid #00ffcc;
-  border-radius: 8px;
-  background: rgba(0, 0, 0, 0.5);
-  color: #fff;
-  font-size: 14pt;
-  text-align: center;
-  outline: none;
+function initStartScreen() {
+  const startScreen = document.getElementById('start-screen');
+  if (startScreen.style.display !== 'none') {
+    startScreen.style.display = 'none';
+    document.getElementById('lobby-screen').style.display = 'flex';
+    playBGM('intro');
+  }
 }
-#nickname-input:focus {
-  box-shadow: 0 0 15px rgba(0, 255, 204, 0.5);
-}
-#nickname-input::placeholder {
-  color: #888;
+document
+  .getElementById('start-screen')
+  .addEventListener('click', initStartScreen);
+document.addEventListener('keydown', initStartScreen);
+
+// ==========================================
+// ★ 랭킹 (로컬스토리지) 시스템 ★
+// ==========================================
+function saveRanking() {
+  const nicknameInput = document.getElementById('nickname-input');
+  const nickname = nicknameInput.value.trim();
+
+  if (!nickname) {
+    document.getElementById('alert-modal').classList.add('active');
+    return;
+  }
+
+  const newRecord = {
+    name: nickname,
+    score: score,
+    combo: maxComboThisRound,
+    date: new Date().toLocaleDateString(),
+    isPlayer: true,
+  };
+  let playerRankings =
+    JSON.parse(localStorage.getItem(`player_rankings_${gameMode}`)) || [];
+  playerRankings.push(newRecord);
+  playerRankings.sort((a, b) => b.score - a.score);
+  playerRankings = playerRankings.slice(0, 50);
+  localStorage.setItem(
+    `player_rankings_${gameMode}`,
+    JSON.stringify(playerRankings),
+  );
+
+  document.getElementById('game-over-modal').classList.remove('active');
+  showRankingScreen(gameMode);
 }
 
-#game-container {
-  width: 100%;
-  max-width: 500px;
-  margin: 0 auto;
-  padding: 15px;
-  height: 100vh;
-  display: flex;
-  flex-direction: column;
-}
-@keyframes screenShake {
-  0% {
-    transform: translate(0, 0) rotate(0deg);
-  }
-  20% {
-    transform: translate(
-        calc(-1.5px * var(--shake-int, 1)),
-        calc(1.5px * var(--shake-int, 1))
-      )
-      rotate(calc(-0.5deg * var(--shake-int, 1)));
-  }
-  40% {
-    transform: translate(
-        calc(1.5px * var(--shake-int, 1)),
-        calc(-1.5px * var(--shake-int, 1))
-      )
-      rotate(calc(0.5deg * var(--shake-int, 1)));
-  }
-  60% {
-    transform: translate(
-        calc(-1.5px * var(--shake-int, 1)),
-        calc(-1.5px * var(--shake-int, 1))
-      )
-      rotate(calc(0deg));
-  }
-  80% {
-    transform: translate(
-        calc(1.5px * var(--shake-int, 1)),
-        calc(1.5px * var(--shake-int, 1))
-      )
-      rotate(calc(-0.5deg * var(--shake-int, 1)));
-  }
-  100% {
-    transform: translate(0, 0) rotate(0deg);
-  }
-}
-.shake-active {
-  animation: screenShake 0.3s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+function closeAlertModal() {
+  document.getElementById('alert-modal').classList.remove('active');
+  document.getElementById('nickname-input').focus();
 }
 
-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-end;
-  margin-bottom: 20px;
-  border-bottom: 2px solid rgba(0, 255, 204, 0.4);
-  padding-bottom: 10px;
-}
-.score-box {
-  font-size: 20pt;
-  font-weight: 900;
-  color: #00ffcc;
-  text-shadow: 0 0 10px #00ffcc;
-  transition: color 0.3s;
-}
-.title-box {
-  font-size: 11pt;
-  font-weight: bold;
-  color: #ff00ff;
-  text-shadow: 0 0 8px #ff00ff;
+function showRankingScreen(modeToOpen) {
+  document.getElementById('lobby-screen').style.display = 'none';
+  document.getElementById('game-container').style.display = 'none';
+  document.getElementById('ranking-screen').style.display = 'flex';
+  playBGM('leaderboard');
+  renderRankingList(modeToOpen);
 }
 
-#board-wrapper {
-  width: 100%;
-  aspect-ratio: 1;
-  background: rgba(255, 255, 255, 0.03);
-  backdrop-filter: blur(10px);
-  border: 2px solid rgba(255, 255, 255, 0.1);
-  box-shadow: 0 0 20px rgba(0, 255, 204, 0.2);
-  border-radius: 12px;
-  padding: 6px;
-  margin-bottom: 20px;
-  transition: all 0.5s ease;
-}
-#grid-board {
-  display: grid;
-  grid-template-columns: repeat(8, 1fr);
-  grid-template-rows: repeat(8, 1fr);
-  gap: 4px;
-  width: 100%;
-  height: 100%;
-}
-.grid-cell {
-  background-color: rgba(0, 0, 0, 0.4);
-  border-radius: 6px;
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  transition: background 0.2s;
+const AI_RIVALS = {
+  normal: [
+    { name: '제갈공명', baseScore: 85000, combo: 24, isPlayer: false },
+    { name: '이소룡', baseScore: 72000, combo: 18, isPlayer: false },
+  ],
+  hell: [
+    { name: '사마의', baseScore: 250000, combo: 35, isPlayer: false },
+    {
+      name: '진시황',
+      baseScore: 210000,
+      combo: 28,
+      isPlayer: false,
+    },
+  ],
+};
+
+function growAIRivals(mode) {
+  let rivals = JSON.parse(localStorage.getItem(`ai_rivals_${mode}`));
+
+  if (!rivals) {
+    rivals = AI_RIVALS[mode].map((r) => ({ ...r, currentScore: r.baseScore }));
+  } else {
+    // 1. 현재 플레이어의 최고 점수 가져오기
+    let playerRankings =
+      JSON.parse(localStorage.getItem(`player_rankings_${mode}`)) || [];
+    let playerBestScore =
+      playerRankings.length > 0 ? playerRankings[0].score : 0;
+
+    // index 0: 1등 AI (제갈공명 / 사마의)
+    // index 1: 2등 AI (이소룡 / 진시황)
+    rivals.forEach((r, index) => {
+      let playChance = 0;
+      let scoreIncrease = 0;
+
+      if (index === 0) {
+        // [1등 AI 성향] 여유 10% / 분노 40% (점수 증가폭: 2500 ~ 7490)
+        playChance = r.currentScore > playerBestScore ? 0.1 : 0.4;
+        scoreIncrease = (Math.floor(Math.random() * 500) + 250) * 10;
+      } else {
+        // [2등 AI 성향] 꾸준함 15% / 분노 30% (점수 증가폭: 1500 ~ 4490 - 조금씩 오름)
+        playChance = r.currentScore > playerBestScore ? 0.15 : 0.3;
+        scoreIncrease = (Math.floor(Math.random() * 300) + 150) * 10;
+      }
+
+      // 확률에 당첨되었을 때만(AI가 게임을 했을 때만) 점수 증가
+      if (Math.random() < playChance) {
+        r.currentScore += scoreIncrease;
+
+        // 5% 확률로 최대 콤보 기록도 갱신
+        if (Math.random() < 0.05) r.combo += 1;
+      }
+    });
+  }
+
+  localStorage.setItem(`ai_rivals_${mode}`, JSON.stringify(rivals));
 }
 
-.color-1 {
-  background: linear-gradient(135deg, #00f2fe, #4facfe);
-  border: 1px solid #fff;
-  box-shadow: inset 0 0 10px rgba(255, 255, 255, 0.8);
-}
-.color-2 {
-  background: linear-gradient(135deg, #b06ab3, #4568dc);
-  border: 1px solid #fff;
-  box-shadow: inset 0 0 10px rgba(255, 255, 255, 0.8);
-}
-.color-3 {
-  background: linear-gradient(135deg, #43e97b, #38f9d7);
-  border: 1px solid #fff;
-  box-shadow: inset 0 0 10px rgba(255, 255, 255, 0.8);
-}
-.color-penalty {
-  background: linear-gradient(135deg, #ff0844, #ffb199);
-  border: 1px solid #fff;
-  box-shadow: inset 0 0 10px rgba(255, 255, 255, 0.8);
+function getAIRivals(mode) {
+  let rivals = JSON.parse(localStorage.getItem(`ai_rivals_${mode}`));
+  if (!rivals) {
+    rivals = AI_RIVALS[mode].map((r) => ({ ...r, currentScore: r.baseScore }));
+    localStorage.setItem(`ai_rivals_${mode}`, JSON.stringify(rivals));
+  }
+  return rivals.map((r) => ({
+    name: r.name,
+    score: r.currentScore,
+    combo: r.combo,
+    isPlayer: false,
+  }));
 }
 
-.cell-obstacle {
-  background: linear-gradient(135deg, #430000, #000000);
-  border: 2px solid #ff003c;
-  border-radius: 6px;
-  box-shadow: inset 0 0 15px #ff003c;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  color: #ff003c;
-  font-size: 16pt;
-  font-weight: 900;
-  text-shadow: 0 0 5px #ff003c;
-}
-.cell-shadow {
-  background-color: rgba(0, 255, 204, 0.3) !important;
-  border: 2px dashed #00ffcc !important;
-  border-radius: 6px;
+function renderRankingList(mode) {
+  document
+    .getElementById('tab-normal')
+    .classList.toggle('active', mode === 'normal');
+  document
+    .getElementById('tab-hell')
+    .classList.toggle('active', mode === 'hell');
+
+  const listEl = document.getElementById('ranking-list');
+  listEl.innerHTML = '';
+  let playerRankings =
+    JSON.parse(localStorage.getItem(`player_rankings_${mode}`)) || [];
+  let aiRankings = getAIRivals(mode);
+
+  let combinedRankings = [...playerRankings, ...aiRankings];
+  combinedRankings.sort((a, b) => b.score - a.score);
+  combinedRankings = combinedRankings.slice(0, 15);
+
+  if (combinedRankings.length === 0) {
+    listEl.innerHTML =
+      "<li style='text-align:center; padding: 20px; color: #888;'>등록된 랭킹이 없습니다.</li>";
+    return;
+  }
+
+  combinedRankings.forEach((record, index) => {
+    const li = document.createElement('li');
+    li.className = 'ranking-item';
+
+    // 등수별 메달 색상
+    let rankColor =
+      index === 0
+        ? '#ffd700'
+        : index === 1
+          ? '#c0c0c0'
+          : index === 2
+            ? '#cd7f32'
+            : '#fff';
+
+    // ★ AI 가독성 개선: 기존 #888에서 밝은 은회색(#e0e0e0)으로 변경 및 그림자 추가 ★
+    const nameColor = record.isPlayer ? '#00ffcc' : '#e0e0e0';
+    const nameShadow = record.isPlayer
+      ? 'text-shadow: 0 0 10px #00ffcc;'
+      : 'text-shadow: 0 0 5px rgba(255,255,255,0.4);'; // AI에게도 부드러운 그림자 부여
+
+    li.innerHTML = `
+        <div>
+            <span style="display:inline-block; width: 35px; color:${rankColor}; font-weight:900; font-size:15pt;">${index + 1}.</span> 
+            <span style="font-size: 13pt; font-weight: bold; color: ${nameColor}; ${nameShadow}">${record.name}</span>
+        </div>
+        <div class="rank-info">
+            <span class="rank-score" style="color:${rankColor};">${record.score.toLocaleString()} 점</span>
+            <span class="rank-combo">MAX ${record.combo} COMBO</span>
+        </div>
+    `;
+    listEl.appendChild(li);
+  });
 }
 
-@keyframes explode {
-  0% {
-    transform: scale(1);
-    filter: brightness(1);
-  }
-  30% {
-    transform: scale(1.4);
-    filter: brightness(3);
-    background: #fff;
-    box-shadow:
-      0 0 30px #fff,
-      0 0 60px #00ffcc,
-      inset 0 0 20px #00ffcc;
-    z-index: 10;
-    border-radius: 20%;
-  }
-  100% {
-    transform: scale(0);
-    opacity: 0;
-  }
-}
-.cell-explode {
-  animation: explode 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
-  position: relative;
-  z-index: 10;
-}
-@keyframes damageShake {
-  0%,
-  100% {
-    transform: translateX(0);
-    filter: brightness(1);
-  }
-  25% {
-    transform: translateX(-4px);
-    filter: brightness(2.5);
-    background: #ff003c;
-  }
-  50% {
-    transform: translateX(4px);
-  }
-  75% {
-    transform: translateX(-4px);
-  }
-}
-.cell-damage {
-  animation: damageShake 0.3s ease-out;
-  z-index: 10;
-  position: relative;
+function returnToLobby() {
+  document.getElementById('ranking-screen').style.display = 'none';
+  document.getElementById('lobby-screen').style.display = 'flex';
+  playBGM('intro');
 }
 
-#block-dock {
-  display: flex;
-  justify-content: space-around;
-  align-items: center;
-  height: 130px;
-  background: rgba(0, 0, 0, 0.5);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 12px;
-  flex-shrink: 0;
-  transition: all 0.5s ease;
-}
-.dock-slot {
-  width: 30%;
-  height: 100%;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-}
-.preview-matrix {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.preview-row {
-  display: flex;
-  gap: 2px;
-}
-.preview-cell {
-  width: 22px;
-  height: 22px;
-  border-radius: 4px;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  font-size: 10pt;
-  font-weight: bold;
-  color: transparent;
-}
-#drag-overlay {
-  position: absolute;
-  pointer-events: none;
-  display: none;
-  z-index: 99;
-  filter: drop-shadow(0 10px 15px rgba(0, 0, 0, 0.5));
-}
-.drag-block-table {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-.drag-row {
-  display: flex;
-  gap: 3px;
-}
-.drag-cell {
-  width: 40px;
-  height: 40px;
-  border-radius: 6px;
-}
+// ==========================================
+// ★ 게임 코어 시스템 ★
+// ==========================================
+const BOARD_SIZE = 8;
+let board = Array(BOARD_SIZE)
+  .fill(null)
+  .map(() => Array(BOARD_SIZE).fill(0));
+let score = 0;
+let currentDockBlocks = [null, null, null];
+let activeDragIndex = null;
+let isDragging = false;
+let gameMode = 'normal';
+let currentCombo = 0;
+let maxComboThisRound = 0;
+let linesClearedThisRound = 0;
+let currentQuiz = null; // 현재 출제된 문제를 저장할 변수
 
-.modal {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background-color: rgba(0, 0, 10, 0.5);
-  backdrop-filter: blur(3px);
-  z-index: 100;
-  display: none;
-  justify-content: center;
-  align-items: center;
-}
-.modal.active {
-  display: flex;
-}
-.modal-content {
-  background: linear-gradient(145deg, #1f1c2c, #928dab);
-  border: 2px solid #00ffcc;
-  border-radius: 16px;
-  width: 85%;
-  max-width: 350px;
-  padding: 25px 20px;
-  text-align: center;
-}
-.modal-content h3 {
-  color: #fff;
-  text-shadow: 0 0 8px #fff;
-  margin-bottom: 20px;
-  font-size: 15pt;
-}
-#quiz-question {
-  font-size: 13pt;
-  margin-bottom: 25px;
-  line-height: 1.5;
-  color: #e0e0e0;
-}
-.option-btn {
-  width: 100%;
-  background: linear-gradient(135deg, #3a1c71, #d76d77, #ffaf7b);
-  color: #fff;
-  border: none;
-  padding: 15px;
-  margin-bottom: 12px;
-  border-radius: 10px;
-  font-size: 13pt;
-  font-weight: bold;
-  cursor: pointer;
-}
-.option-btn:active {
-  transform: scale(0.97);
-  filter: brightness(1.2);
-}
-.feedback {
-  margin-top: 15px;
-  font-size: 13pt;
-  font-weight: bold;
-  height: 24px;
-}
+const GOOD_BLOCKS = [
+  [[1, 1, 1, 1]],
+  [[1], [1], [1], [1]],
+  [
+    [1, 1],
+    [1, 1],
+  ],
 
-/* ★ 콤보 & 다중 라인 ボーナス 텍스트 스타일 ★ */
-.combo-text {
-  position: absolute;
-  top: 40%;
-  left: 50%;
-  transform: translate(-50%, -50%) scale(0);
-  font-size: 32pt;
-  font-weight: 900;
-  font-style: italic;
-  color: #ff00ff;
-  text-shadow:
-    0 0 10px #fff,
-    0 0 20px #ff00ff,
-    0 0 40px #ff00cc;
-  z-index: 150;
-  pointer-events: none;
-  opacity: 0;
-  transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-  text-align: center;
-}
-.combo-text.show {
-  transform: translate(-50%, -50%) scale(1.2);
-  opacity: 1;
-}
-.bonus-lines {
-  display: block;
-  font-size: 18pt;
-  color: #00ffcc;
-  text-shadow: 0 0 15px #00ffcc;
-  margin-bottom: 5px;
-}
+  [[1, 1, 1]],
+  [[1], [1], [1]],
+  [
+    [1, 1, 1],
+    [1, 1, 1],
+  ],
+  [
+    [1, 1],
+    [1, 1],
+    [1, 1],
+  ],
+];
+const NORMAL_BLOCKS = [
+  [
+    [1, 1],
+    [0, 1],
+  ],
+  [
+    [1, 1],
+    [1, 0],
+  ],
+  [
+    [0, 1],
+    [1, 1],
+  ],
+  [
+    [1, 0],
+    [1, 1],
+  ],
+  [
+    [1, 1, 1],
+    [1, 1, 1],
+    [1, 1, 1],
+  ],
+  [
+    [1, 1, 1],
+    [0, 1, 0],
+  ],
+  [
+    [0, 1, 0],
+    [1, 1, 1],
+  ],
+  [
+    [1, 0],
+    [1, 1],
+    [1, 0],
+  ],
+  [
+    [0, 1],
+    [1, 1],
+    [0, 1],
+  ],
+  [
+    [1, 0],
+    [1, 0],
+    [1, 1],
+  ],
+  [
+    [0, 1],
+    [0, 1],
+    [1, 1],
+  ],
+  [[1, 1, 1, 1, 1]],
+  [[1], [1], [1], [1], [1]],
 
-/* ★ 올 클리어 황금빛 이펙트 ★ */
-.all-clear-text {
-  position: absolute;
-  top: 35%;
-  left: 50%;
-  transform: translate(-50%, -50%) scale(0);
-  font-size: 38pt;
-  font-weight: 900;
-  font-style: italic;
-  color: #ffd700;
-  text-shadow:
-    0 0 15px #fff,
-    0 0 30px #ffd700,
-    0 0 50px #ff8c00;
-  z-index: 200;
-  pointer-events: none;
-  opacity: 0;
-  transition: all 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-  text-align: center;
-}
-.all-clear-text.show {
-  transform: translate(-50%, -50%) scale(1.1);
-  opacity: 1;
-}
+  [
+    [1, 1, 1],
+    [1, 0, 0],
+  ],
+  [
+    [1, 1, 1],
+    [0, 0, 1],
+  ],
+  [
+    [1, 0],
+    [1, 0],
+    [1, 1],
+  ],
+  [
+    [0, 1],
+    [0, 1],
+    [1, 1],
+  ],
 
-body.hell-theme {
-  background: linear-gradient(135deg, #2a0000, #4d0000, #1a0000);
-}
-body.hell-theme header {
-  border-bottom: 2px solid rgba(255, 50, 50, 0.4);
-}
-body.hell-theme .score-box {
-  color: #ff3333;
-  text-shadow:
-    0 0 10px #ff3333,
-    0 0 20px #ff0000;
-}
-body.hell-theme .title-box {
-  color: #ffaa00;
-  text-shadow: 0 0 8px #ffaa00;
-}
-body.hell-theme #board-wrapper {
-  background: rgba(50, 0, 0, 0.15);
-  border: 2px solid rgba(255, 50, 50, 0.3);
-  box-shadow:
-    0 0 25px rgba(255, 0, 0, 0.4),
-    inset 0 0 15px rgba(255, 0, 0, 0.1);
-}
-body.hell-theme .grid-cell {
-  background-color: rgba(40, 0, 0, 0.6);
-  border: 1px solid rgba(255, 0, 0, 0.15);
-}
-body.hell-theme #block-dock {
-  background: rgba(40, 0, 0, 0.6);
-  border: 1px solid rgba(255, 50, 50, 0.2);
-  box-shadow: inset 0 5px 15px rgba(0, 0, 0, 0.9);
-}
-body.hell-theme .color-1 {
-  background: linear-gradient(135deg, #ff4b1f, #ff9068);
-  box-shadow: inset 0 0 10px rgba(255, 255, 255, 0.6);
-}
-body.hell-theme .color-2 {
-  background: linear-gradient(135deg, #870000, #190a05);
-  box-shadow: inset 0 0 10px rgba(255, 0, 0, 0.8);
-}
-body.hell-theme .color-3 {
-  background: linear-gradient(135deg, #f12711, #f5af19);
-  box-shadow: inset 0 0 10px rgba(255, 255, 255, 0.6);
-}
-body.hell-theme .cell-shadow {
-  background-color: rgba(255, 0, 0, 0.25) !important;
-  border: 2px dashed #ff3333 !important;
-}
-body.hell-theme .combo-text {
-  color: #ff3300;
-  text-shadow:
-    0 0 10px #fff,
-    0 0 20px #ff0000,
-    0 0 40px #ff3300;
-}
-@keyframes flashLightHell {
-  0% {
-    background-color: rgba(255, 0, 0, 0);
+  [
+    [0, 1],
+    [1, 1],
+    [1, 0],
+  ],
+  [
+    [1, 0],
+    [1, 1],
+    [0, 1],
+  ],
+  [
+    [1, 1, 0],
+    [0, 1, 1],
+  ],
+  [
+    [0, 1, 1],
+    [1, 1, 0],
+  ],
+];
+const HARD_BLOCKS = [
+  [
+    [1, 1, 1],
+    [0, 1, 0],
+    [1, 1, 1],
+  ],
+  [
+    [0, 1, 0],
+    [0, 1, 0],
+    [1, 1, 1],
+  ],
+  [
+    [1, 1, 1],
+    [0, 1, 0],
+    [0, 1, 0],
+  ],
+  [
+    [1, 0, 0],
+    [1, 0, 0],
+    [1, 1, 1],
+  ],
+  [
+    [0, 0, 1],
+    [0, 0, 1],
+    [1, 1, 1],
+  ],
+  [
+    [1, 1, 1],
+    [1, 0, 0],
+    [1, 0, 0],
+  ],
+  [
+    [1, 1, 1],
+    [0, 0, 1],
+    [0, 0, 1],
+  ],
+  [
+    [1, 1, 0],
+    [1, 1, 1],
+  ],
+  [
+    [0, 1, 1],
+    [1, 1, 1],
+  ],
+  [
+    [1, 1, 1],
+    [1, 1, 0],
+  ],
+  [
+    [1, 1, 1],
+    [0, 1, 1],
+  ],
+];
+
+function startGame(mode) {
+  gameMode = mode;
+  document.getElementById('lobby-screen').style.display = 'none';
+  document.getElementById('game-container').style.display = 'flex';
+
+  if (mode === 'hell') {
+    document.body.classList.add('hell-theme');
+    document.getElementById('mode-display').innerText = 'HELL 🔥';
+    document.getElementById('mode-display').style.color = '#ff003c';
+  } else {
+    document.body.classList.remove('hell-theme');
+    document.getElementById('mode-display').innerText = 'NORMAL';
+    document.getElementById('mode-display').style.color = '#ff00ff';
   }
-  10% {
-    background-color: rgba(255, 0, 0, 0.7);
+
+  playBGM(mode);
+  board = Array(BOARD_SIZE)
+    .fill(null)
+    .map(() => Array(BOARD_SIZE).fill(0));
+  score = 0;
+  currentCombo = 0;
+  maxComboThisRound = 0;
+  linesClearedThisRound = 0;
+
+  initBoardHTML();
+  generateDockBlocks();
+  setupTouchEvents();
+}
+
+function initBoardHTML() {
+  const boardEl = document.getElementById('grid-board');
+  boardEl.innerHTML = '';
+  for (let r = 0; r < BOARD_SIZE; r++) {
+    for (let c = 0; c < BOARD_SIZE; c++) {
+      const cellEl = document.createElement('div');
+      cellEl.className = 'grid-cell';
+      cellEl.id = `cell-${r}-${c}`;
+      boardEl.appendChild(cellEl);
+    }
   }
-  100% {
-    background-color: rgba(255, 0, 0, 0);
+  renderBoard();
+}
+
+function renderBoard() {
+  for (let r = 0; r < BOARD_SIZE; r++) {
+    for (let c = 0; c < BOARD_SIZE; c++) {
+      const cellEl = document.getElementById(`cell-${r}-${c}`);
+      cellEl.className = 'grid-cell';
+      cellEl.innerText = '';
+      const val = board[r][c];
+      if (val >= 1 && val <= 3) cellEl.classList.add(`color-${val}`);
+      else if (val >= 11) {
+        cellEl.classList.add('cell-obstacle');
+        cellEl.innerText = val - 10;
+      }
+    }
+  }
+  document.getElementById('score').innerText = score;
+}
+
+// ==========================================
+// ★ 퀴즈 시스템 (힌트 보기 및 중복 클릭 방지) ★
+// ==========================================
+function triggerNewQuiz() {
+  const modal = document.getElementById('quiz-modal');
+  const feedback = document.getElementById('quiz-feedback');
+  const hintBtn = document.getElementById('hint-btn');
+  const pinyinDisplay = document.getElementById('quiz-pinyin');
+
+  feedback.innerText = '';
+
+  // 팝업이 뜰 때마다 힌트 상태 초기화
+  hintBtn.style.display = 'inline-block';
+  pinyinDisplay.style.display = 'none';
+
+  // data.js의 데이터 포맷에 맞게 출제
+  currentQuiz = QUIZ_DATA[Math.floor(Math.random() * QUIZ_DATA.length)];
+  document.getElementById('quiz-question').innerText = currentQuiz.q;
+  pinyinDisplay.innerText = currentQuiz.pinyin; // 병음 데이터 세팅
+
+  const optionsContainer = document.getElementById('quiz-options');
+  optionsContainer.innerHTML = '';
+
+  currentQuiz.options.forEach((opt) => {
+    const btn = document.createElement('button');
+    btn.className = 'option-btn';
+    btn.innerText = opt;
+    btn.onclick = () => {
+      // 더블 클릭 방지
+      const allBtns = optionsContainer.querySelectorAll('button');
+      allBtns.forEach((b) => (b.disabled = true));
+
+      if (opt === currentQuiz.a) {
+        playCorrectSound();
+        feedback.innerText = '정답입니다!';
+        feedback.style.color = '#00ff00';
+        setTimeout(() => {
+          modal.classList.remove('active');
+          generateDockBlocks();
+        }, 700);
+      } else {
+        playWrongSound();
+        feedback.innerText =
+          gameMode === 'hell'
+            ? '오답! 장애물 최대 6개 투하!'
+            : '오답! 장애물 1개 투하!';
+        feedback.style.color = '#ff3333';
+        currentCombo = 0;
+        linesClearedThisRound = 0;
+        setTimeout(() => {
+          modal.classList.remove('active');
+          spawnObstacleStone(gameMode);
+          generateDockBlocks();
+        }, 1000);
+      }
+    };
+    optionsContainer.appendChild(btn);
+  });
+
+  modal.classList.add('active');
+  playQuizPopupSound();
+}
+
+// 힌트 버튼 클릭 시 실행되는 함수
+function showHint() {
+  document.getElementById('hint-btn').style.display = 'none';
+  document.getElementById('quiz-pinyin').style.display = 'block';
+}
+
+function spawnObstacleStone(mode) {
+  let totalToSpawn = mode === 'hell' ? Math.floor(Math.random() * 6) + 1 : 1;
+  let spawned = 0;
+  while (spawned < totalToSpawn) {
+    let emptyCells = [];
+    for (let r = 0; r < BOARD_SIZE; r++) {
+      for (let c = 0; c < BOARD_SIZE; c++)
+        if (board[r][c] === 0) emptyCells.push({ r, c });
+    }
+    if (emptyCells.length === 0) break;
+
+    let clusterSize = Math.floor(Math.random() * (totalToSpawn - spawned)) + 1;
+    let startCell = emptyCells[Math.floor(Math.random() * emptyCells.length)];
+    let cluster = [startCell];
+    let visited = new Set();
+    visited.add(`${startCell.r},${startCell.c}`);
+    let queue = [startCell];
+
+    while (cluster.length < clusterSize && queue.length > 0) {
+      let curr = queue.shift();
+      let neighbors = [
+        { r: curr.r - 1, c: curr.c },
+        { r: curr.r + 1, c: curr.c },
+        { r: curr.r, c: curr.c - 1 },
+        { r: curr.r, c: curr.c + 1 },
+      ].filter(
+        (n) =>
+          n.r >= 0 &&
+          n.r < BOARD_SIZE &&
+          n.c >= 0 &&
+          n.c < BOARD_SIZE &&
+          board[n.r][n.c] === 0 &&
+          !visited.has(`${n.r},${n.c}`),
+      );
+      neighbors.sort(() => Math.random() - 0.5);
+      for (let n of neighbors) {
+        visited.add(`${n.r},${n.c}`);
+        cluster.push(n);
+        queue.push(n);
+        if (cluster.length >= clusterSize) break;
+      }
+    }
+    for (let cell of cluster) {
+      let durability = Math.floor(Math.random() * 2) + 2;
+      board[cell.r][cell.c] = 10 + durability;
+      spawned++;
+    }
+  }
+  renderBoard();
+}
+
+function generateDockBlocks() {
+  const colorPool = [1, 2, 3].sort(() => Math.random() - 0.5);
+  let normalChance = 0;
+  let hardChance = 0;
+
+  if (gameMode === 'normal') {
+    normalChance = 0.05;
+    hardChance = 0.0;
+    if (currentCombo >= 11) {
+      let increase = (currentCombo - 10) * 0.01;
+      normalChance += increase;
+      hardChance += increase;
+    }
+  } else if (gameMode === 'hell') {
+    normalChance = 0.15;
+    hardChance = 0.0;
+    if (currentCombo >= 11) {
+      let increase = (currentCombo - 10) * 0.01;
+      normalChance += increase;
+      hardChance += increase;
+    }
+  }
+
+  if (normalChance + hardChance > 1.0) {
+    let over = normalChance + hardChance - 1.0;
+    normalChance -= over / 2;
+    hardChance -= over / 2;
+  }
+
+  for (let i = 0; i < 3; i++) {
+    const rand = Math.random();
+    let poolToUse =
+      rand < hardChance
+        ? HARD_BLOCKS
+        : rand < hardChance + normalChance
+          ? NORMAL_BLOCKS
+          : GOOD_BLOCKS;
+    const blockMatrix = JSON.parse(
+      JSON.stringify(poolToUse[Math.floor(Math.random() * poolToUse.length)]),
+    );
+    currentDockBlocks[i] = { matrix: blockMatrix, colorVal: colorPool[i] };
+    renderDockSlot(i);
+  }
+  checkGameOverCondition();
+}
+
+function renderDockSlot(slotIndex) {
+  const slotEl = document.getElementById(`slot-${slotIndex}`);
+  slotEl.innerHTML = '';
+  const blockData = currentDockBlocks[slotIndex];
+  if (!blockData) return;
+  const table = document.createElement('div');
+  table.className = 'preview-matrix';
+  blockData.matrix.forEach((row) => {
+    const rowEl = document.createElement('div');
+    rowEl.className = 'preview-row';
+    row.forEach((cell) => {
+      const cellEl = document.createElement('div');
+      cellEl.className = 'preview-cell';
+      if (cell === 1) cellEl.classList.add(`color-${blockData.colorVal}`);
+      rowEl.appendChild(cellEl);
+    });
+    table.appendChild(rowEl);
+  });
+  slotEl.appendChild(table);
+}
+
+function setupTouchEvents() {
+  const dockSlots = document.querySelectorAll('.dock-slot');
+  const overlay = document.getElementById('drag-overlay');
+
+  function updateDragPosition(clientX, clientY) {
+    if (!isDragging) return { topLeftX: 0, topLeftY: 0 };
+    const overlayRect = overlay.getBoundingClientRect();
+    const centerX = clientX;
+    const centerY = clientY - 40;
+    overlay.style.left = `${centerX - overlayRect.width / 2}px`;
+    overlay.style.top = `${centerY - overlayRect.height / 2}px`;
+    const topLeftX = centerX - overlayRect.width / 2 + 20;
+    const topLeftY = centerY - overlayRect.height / 2 + 20;
+    drawShadow(topLeftX, topLeftY);
+    return { topLeftX, topLeftY };
+  }
+
+  function handleStart(clientX, clientY, slot) {
+    const slotIndex = parseInt(slot.getAttribute('data-slot'));
+    if (!currentDockBlocks[slotIndex]) return;
+    activeDragIndex = slotIndex;
+    isDragging = true;
+    createDragOverlayStyle(currentDockBlocks[slotIndex]);
+    overlay.style.display = 'block';
+    requestAnimationFrame(() => updateDragPosition(clientX, clientY));
+  }
+
+  function handleMove(clientX, clientY) {
+    updateDragPosition(clientX, clientY);
+  }
+
+  function handleEnd(clientX, clientY) {
+    if (!isDragging) return;
+    const { topLeftX, topLeftY } = updateDragPosition(clientX, clientY);
+    isDragging = false;
+    overlay.style.display = 'none';
+    clearShadow();
+
+    const targetCell = findBoardCellAtPos(topLeftX, topLeftY);
+    if (targetCell) {
+      const { r, c } = targetCell;
+      const blockData = currentDockBlocks[activeDragIndex];
+      if (canPlaceBlock(r, c, blockData.matrix)) {
+        placeBlock(r, c, blockData.matrix, blockData.colorVal);
+        currentDockBlocks[activeDragIndex] = null;
+        renderDockSlot(activeDragIndex);
+
+        clearFullLines(() => {
+          if (currentDockBlocks.every((b) => b === null)) {
+            if (linesClearedThisRound === 0) currentCombo = 0;
+            linesClearedThisRound = 0;
+            setTimeout(() => triggerNewQuiz(), 300);
+          } else checkGameOverCondition();
+        });
+      }
+    }
+    activeDragIndex = null;
+  }
+
+  dockSlots.forEach((slot) => {
+    slot.addEventListener(
+      'touchstart',
+      (e) => handleStart(e.touches[0].clientX, e.touches[0].clientY, slot),
+      { passive: false },
+    );
+    slot.addEventListener('mousedown', (e) =>
+      handleStart(e.clientX, e.clientY, slot),
+    );
+  });
+  window.addEventListener(
+    'touchmove',
+    (e) => {
+      if (isDragging) {
+        e.preventDefault();
+        handleMove(e.touches[0].clientX, e.touches[0].clientY);
+      }
+    },
+    { passive: false },
+  );
+  window.addEventListener('mousemove', (e) => handleMove(e.clientX, e.clientY));
+  window.addEventListener('touchend', (e) =>
+    handleEnd(e.changedTouches[0].clientX, e.changedTouches[0].clientY),
+  );
+  window.addEventListener('mouseup', (e) => handleEnd(e.clientX, e.clientY));
+}
+
+function clearShadow() {
+  document
+    .querySelectorAll('.cell-shadow')
+    .forEach((el) => el.classList.remove('cell-shadow'));
+}
+
+function drawShadow(topLeftX, topLeftY) {
+  clearShadow();
+  if (activeDragIndex === null) return;
+  const targetCell = findBoardCellAtPos(topLeftX, topLeftY);
+  if (!targetCell) return;
+  const { r, c } = targetCell;
+  const blockData = currentDockBlocks[activeDragIndex];
+  if (canPlaceBlock(r, c, blockData.matrix)) {
+    for (let row = 0; row < blockData.matrix.length; row++) {
+      for (let col = 0; col < blockData.matrix[row].length; col++) {
+        if (blockData.matrix[row][col] === 1) {
+          const cellEl = document.getElementById(`cell-${r + row}-${c + col}`);
+          if (cellEl) cellEl.classList.add('cell-shadow');
+        }
+      }
+    }
   }
 }
-body.hell-theme .flash-active {
-  animation: flashLightHell 0.6s ease-out forwards;
+
+function createDragOverlayStyle(blockData) {
+  const overlay = document.getElementById('drag-overlay');
+  overlay.innerHTML = '';
+  const container = document.createElement('div');
+  container.className = 'drag-block-table';
+  blockData.matrix.forEach((row) => {
+    const rowEl = document.createElement('div');
+    rowEl.className = 'drag-row';
+    row.forEach((cell) => {
+      const cellEl = document.createElement('div');
+      cellEl.className = 'drag-cell';
+      cellEl.style.width = '40px';
+      cellEl.style.height = '40px';
+      if (cell === 1) cellEl.classList.add(`color-${blockData.colorVal}`);
+      cellEl.style.opacity = cell === 1 ? '1' : '0';
+      rowEl.appendChild(cellEl);
+    });
+    container.appendChild(rowEl);
+  });
+  overlay.appendChild(container);
+}
+
+function findBoardCellAtPos(x, y) {
+  const boardEl = document.getElementById('grid-board');
+  const rect = boardEl.getBoundingClientRect();
+  if (
+    x < rect.left - 20 ||
+    x > rect.right + 20 ||
+    y < rect.top - 20 ||
+    y > rect.bottom + 20
+  )
+    return null;
+  const cellW = rect.width / BOARD_SIZE;
+  const cellH = rect.height / BOARD_SIZE;
+  let c = Math.floor((x - rect.left) / cellW);
+  let r = Math.floor((y - rect.top) / cellH);
+  c = Math.max(0, Math.min(c, BOARD_SIZE - 1));
+  r = Math.max(0, Math.min(r, BOARD_SIZE - 1));
+  return { r, c };
+}
+
+function canPlaceBlock(startR, startC, matrix) {
+  for (let r = 0; r < matrix.length; r++) {
+    for (let c = 0; c < matrix[r].length; c++) {
+      if (matrix[r][c] === 1) {
+        const tr = startR + r;
+        const tc = startC + c;
+        if (
+          tr < 0 ||
+          tr >= BOARD_SIZE ||
+          tc < 0 ||
+          tc >= BOARD_SIZE ||
+          board[tr][tc] !== 0
+        )
+          return false;
+      }
+    }
+  }
+  return true;
+}
+
+function placeBlock(startR, startC, matrix, colorVal) {
+  for (let r = 0; r < matrix.length; r++) {
+    for (let c = 0; c < matrix[r].length; c++) {
+      if (matrix[r][c] === 1) {
+        board[startR + r][startC + c] = colorVal;
+        score += 10;
+      }
+    }
+  }
+  renderBoard();
+}
+
+function clearFullLines(onComplete) {
+  let rowsToClear = [];
+  let colsToClear = [];
+  for (let r = 0; r < BOARD_SIZE; r++)
+    if (board[r].every((cell) => cell !== 0)) rowsToClear.push(r);
+  for (let c = 0; c < BOARD_SIZE; c++) {
+    let isFull = true;
+    for (let r = 0; r < BOARD_SIZE; r++) {
+      if (board[r][c] === 0) {
+        isFull = false;
+        break;
+      }
+    }
+    if (isFull) colsToClear.push(c);
+  }
+  const totalCleared = rowsToClear.length + colsToClear.length;
+
+  if (totalCleared > 0) {
+    playClearSound(); // ★ 블록 제거 타격감 사운드 재생
+
+    let previousCombo = currentCombo;
+    currentCombo += totalCleared;
+    maxComboThisRound = Math.max(maxComboThisRound, currentCombo);
+    linesClearedThisRound += totalCleared;
+
+    let shakeIntensity = 1 + currentCombo * 0.5;
+    document.documentElement.style.setProperty(
+      '--shake-int',
+      Math.min(shakeIntensity, 6),
+    );
+    const gameContainer = document.getElementById('game-container');
+    gameContainer.classList.remove('shake-active');
+    void gameContainer.offsetWidth;
+    gameContainer.classList.add('shake-active');
+    setTimeout(() => gameContainer.classList.remove('shake-active'), 400);
+
+    if (currentCombo >= 10) {
+      const flash = document.getElementById('light-flash-overlay');
+      flash.classList.remove('flash-active');
+      void flash.offsetWidth;
+      flash.classList.add('flash-active');
+      setTimeout(() => flash.classList.remove('flash-active'), 600);
+    }
+
+    let normalCells = [];
+    let damagedObstacles = [];
+    let hitCells = new Set();
+    rowsToClear.forEach((r) => {
+      for (let c = 0; c < BOARD_SIZE; c++) hitCells.add(`${r},${c}`);
+    });
+    colsToClear.forEach((c) => {
+      for (let r = 0; r < BOARD_SIZE; r++) hitCells.add(`${r},${c}`);
+    });
+    hitCells.forEach((pos) => {
+      let [r, c] = pos.split(',').map(Number);
+      if (board[r][c] >= 11) damagedObstacles.push({ r, c });
+      else if (board[r][c] > 0) normalCells.push({ r, c });
+    });
+
+    normalCells.forEach((pos) =>
+      document
+        .getElementById(`cell-${pos.r}-${pos.c}`)
+        .classList.add('cell-explode'),
+    );
+    damagedObstacles.forEach((pos) =>
+      document
+        .getElementById(`cell-${pos.r}-${pos.c}`)
+        .classList.add('cell-damage'),
+    );
+
+    setTimeout(() => {
+      normalCells.forEach((pos) => {
+        board[pos.r][pos.c] = 0;
+      });
+      damagedObstacles.forEach((pos) => {
+        board[pos.r][pos.c] -= 1;
+        if (board[pos.r][pos.c] <= 10) board[pos.r][pos.c] = 0;
+      });
+
+      const baseScore = gameMode === 'hell' ? 300 : 150;
+      let earnedScore = totalCleared * baseScore * currentCombo;
+      score += earnedScore;
+
+      showComboEffect(totalCleared, currentCombo);
+
+      // ★ 다중 라인 제거 시 연속 아르페지오 사운드 재생 ★
+      playSequentialComboSounds(previousCombo + 1, totalCleared);
+
+      let isAllClear = true;
+      for (let r = 0; r < BOARD_SIZE; r++) {
+        for (let c = 0; c < BOARD_SIZE; c++) {
+          if (board[r][c] > 0) {
+            isAllClear = false;
+            break;
+          }
+        }
+        if (!isAllClear) break;
+      }
+      if (isAllClear) {
+        score += 1000;
+        showAllClearEffect();
+      }
+
+      renderBoard();
+      if (onComplete) onComplete();
+    }, 300);
+  } else {
+    if (onComplete) onComplete();
+  }
+}
+
+function showComboEffect(linesCleared, finalCombo) {
+  const comboEl = document.getElementById('combo-display');
+  let bonusText =
+    linesCleared > 1
+      ? `<span class="bonus-lines">+${linesCleared} LINES!</span>`
+      : '';
+  comboEl.innerHTML = `${bonusText}${finalCombo} COMBO!`;
+  comboEl.classList.remove('show');
+  void comboEl.offsetWidth;
+  comboEl.classList.add('show');
+  setTimeout(() => {
+    comboEl.classList.remove('show');
+  }, 1200);
+}
+
+function showAllClearEffect() {
+  const acEl = document.getElementById('all-clear-display');
+  acEl.classList.remove('show');
+  void acEl.offsetWidth;
+  acEl.classList.add('show');
+  const flash = document.getElementById('light-flash-overlay');
+  flash.classList.remove('flash-active');
+  void flash.offsetWidth;
+  flash.classList.add('flash-active');
+  setTimeout(() => {
+    acEl.classList.remove('show');
+  }, 2000);
+}
+
+function checkGameOverCondition() {
+  let activeBlocksCount = 0;
+  let placeableBlocksCount = 0;
+  for (let i = 0; i < 3; i++) {
+    const blockData = currentDockBlocks[i];
+    if (blockData) {
+      activeBlocksCount++;
+      let canBePlacedAnywhere = false;
+      for (let r = 0; r < BOARD_SIZE; r++) {
+        for (let c = 0; c < BOARD_SIZE; c++) {
+          if (canPlaceBlock(r, c, blockData.matrix)) {
+            canBePlacedAnywhere = true;
+            break;
+          }
+        }
+        if (canBePlacedAnywhere) break;
+      }
+      if (canBePlacedAnywhere) placeableBlocksCount++;
+    }
+  }
+
+  if (activeBlocksCount > 0 && placeableBlocksCount === 0) {
+    growAIRivals(gameMode);
+    setTimeout(() => {
+      playBGM('leaderboard');
+      const gameOverModal = document.getElementById('game-over-modal');
+      const statsText = document.getElementById('game-over-stats');
+      statsText.innerHTML = `모드: <strong style="color:#ff00ff;">${gameMode.toUpperCase()}</strong><br>최종 점수: <strong style="color:#00ffcc;">${score}</strong> 점<br>최대 콤보: <strong style="color:#ffaf7b;">${maxComboThisRound}</strong> Combo`;
+      gameOverModal.classList.add('active');
+    }, 400);
+  }
+}
+
+// ==========================================
+// ★ Web Audio API 기반 커스텀 사운드 효과 ★
+// ==========================================
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+const scaleFrequencies = [
+  261.63, 293.66, 329.63, 349.23, 392.0, 440.0, 493.88, 523.25,
+]; // 도레미파솔라시도
+
+// 1. 퀴즈 등장 효과음 (띠로롱~) - 볼륨 2배 증가
+function playQuizPopupSound() {
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(400, audioCtx.currentTime);
+  osc.frequency.exponentialRampToValueAtTime(800, audioCtx.currentTime + 0.15);
+  gain.gain.setValueAtTime(1.0, audioCtx.currentTime); // 볼륨 1.0으로 상향
+  gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.3);
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+  osc.start();
+  osc.stop(audioCtx.currentTime + 0.3);
+}
+
+// 2. 블록 제거 타격 효과음 (파직!) - 볼륨 2.4배 증가
+function playClearSound() {
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = 'square';
+  osc.frequency.setValueAtTime(150, audioCtx.currentTime);
+  osc.frequency.exponentialRampToValueAtTime(40, audioCtx.currentTime + 0.15);
+  gain.gain.setValueAtTime(1.2, audioCtx.currentTime); // 볼륨 1.2로 상향 (강한 타격감)
+  gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.2);
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+  osc.start();
+  osc.stop(audioCtx.currentTime + 0.2);
+}
+
+// 3. 다중 라인 제거 시 아르페지오 (도-레-미 연속 재생) - 볼륨 증가
+function playSequentialComboSounds(startCombo, linesCleared) {
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+
+  for (let i = 0; i < linesCleared; i++) {
+    const currentComboCount = startCombo + i;
+    const scaleIndex = (currentComboCount - 1) % 8;
+    const octaveMultiplier = Math.pow(
+      2,
+      Math.floor((currentComboCount - 1) / 8),
+    );
+    const freq = scaleFrequencies[scaleIndex] * octaveMultiplier;
+
+    const oscillator = audioCtx.createOscillator();
+    const gainNode = audioCtx.createGain();
+    oscillator.type = 'sawtooth'; // 레트로 오락실 느낌 파형
+
+    // 0.15초 간격으로 스케줄링하여 아르페지오 연출
+    const startTime = audioCtx.currentTime + i * 0.15;
+    const stopTime = startTime + 0.4;
+
+    oscillator.frequency.setValueAtTime(freq, startTime);
+
+    gainNode.gain.setValueAtTime(0.0, audioCtx.currentTime); // 시작 전엔 음소거
+    gainNode.gain.setValueAtTime(1.0, startTime); // 볼륨 1.0으로 상향
+    gainNode.gain.exponentialRampToValueAtTime(0.001, stopTime);
+
+    oscillator.connect(gainNode);
+    gainNode.connect(audioCtx.destination);
+    oscillator.start(startTime);
+    oscillator.stop(stopTime);
+  }
+}
+
+// 4. 정답 효과음 (밝고 경쾌한 상승음)
+function playCorrectSound() {
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = 'triangle';
+  osc.frequency.setValueAtTime(440, audioCtx.currentTime); // A4
+  osc.frequency.setValueAtTime(554.37, audioCtx.currentTime + 0.1); // C#5
+  osc.frequency.setValueAtTime(659.25, audioCtx.currentTime + 0.2); // E5
+  gain.gain.setValueAtTime(1.0, audioCtx.currentTime); // 볼륨 1.0
+  gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.4);
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+  osc.start();
+  osc.stop(audioCtx.currentTime + 0.4);
+}
+
+// 5. 오답 효과음 (둔탁하고 하락하는 경고음)
+function playWrongSound() {
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = 'sawtooth';
+  osc.frequency.setValueAtTime(200, audioCtx.currentTime); // 낮은 주파수
+  osc.frequency.exponentialRampToValueAtTime(50, audioCtx.currentTime + 0.4);
+  gain.gain.setValueAtTime(1.0, audioCtx.currentTime); // 볼륨 1.0
+  gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.4);
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+  osc.start();
+  osc.stop(audioCtx.currentTime + 0.4);
 }
