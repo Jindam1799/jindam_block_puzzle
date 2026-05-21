@@ -277,7 +277,7 @@ let currentCombo = 0;
 let maxComboThisRound = 0;
 let linesClearedThisRound = 0;
 let currentQuiz = null; // 현재 출제된 문제를 저장할 변수
-
+let availableQuizzes = []; // ★ 퀴즈 중복 출제 방지를 위한 남은 문제 배열
 const GOOD_BLOCKS = [
   [[1, 1, 1, 1]],
   [[1], [1], [1], [1]],
@@ -468,7 +468,7 @@ function startGame(mode) {
   currentCombo = 0;
   maxComboThisRound = 0;
   linesClearedThisRound = 0;
-
+  availableQuizzes = []; // ★ 새 게임 시작 시 문제 덱 초기화 추가 ★
   initBoardHTML();
   generateDockBlocks();
   setupTouchEvents();
@@ -504,9 +504,8 @@ function renderBoard() {
   }
   document.getElementById('score').innerText = score;
 }
-
 // ==========================================
-// ★ 퀴즈 시스템 (힌트 보기 및 중복 클릭 방지) ★
+// ★ 퀴즈 시스템 (힌트 보기 & 중복 방지 로직) ★
 // ==========================================
 function triggerNewQuiz() {
   const modal = document.getElementById('quiz-modal');
@@ -520,10 +519,23 @@ function triggerNewQuiz() {
   hintBtn.style.display = 'inline-block';
   pinyinDisplay.style.display = 'none';
 
-  // data.js의 데이터 포맷에 맞게 출제
-  currentQuiz = QUIZ_DATA[Math.floor(Math.random() * QUIZ_DATA.length)];
+  // ★ 중복 방지 로직: 남은 문제가 없으면 원본 데이터를 복사하고 무작위로 섞음 (피셔-예이츠 셔플) ★
+  if (availableQuizzes.length === 0) {
+    availableQuizzes = [...QUIZ_DATA]; // 데이터 복사
+    for (let i = availableQuizzes.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [availableQuizzes[i], availableQuizzes[j]] = [
+        availableQuizzes[j],
+        availableQuizzes[i],
+      ];
+    }
+  }
+
+  // 섞여 있는 배열의 맨 끝에서 문제를 하나씩 뽑아 출제 (한 바퀴 돌 때까지 중복 절대 불가)
+  currentQuiz = availableQuizzes.pop();
+
   document.getElementById('quiz-question').innerText = currentQuiz.q;
-  pinyinDisplay.innerText = currentQuiz.pinyin; // 병음 데이터 세팅
+  pinyinDisplay.innerText = currentQuiz.pinyin;
 
   const optionsContainer = document.getElementById('quiz-options');
   optionsContainer.innerHTML = '';
@@ -538,7 +550,7 @@ function triggerNewQuiz() {
       allBtns.forEach((b) => (b.disabled = true));
 
       if (opt === currentQuiz.a) {
-        playCorrectSound();
+        playCorrectSound(); // 정답 효과음 재생
         feedback.innerText = '정답입니다!';
         feedback.style.color = '#00ff00';
         setTimeout(() => {
@@ -546,7 +558,7 @@ function triggerNewQuiz() {
           generateDockBlocks();
         }, 700);
       } else {
-        playWrongSound();
+        playWrongSound(); // 오답 효과음 재생
         feedback.innerText =
           gameMode === 'hell'
             ? '오답! 장애물 최대 6개 투하!'
@@ -565,7 +577,7 @@ function triggerNewQuiz() {
   });
 
   modal.classList.add('active');
-  playQuizPopupSound();
+  playQuizPopupSound(); // 퀴즈 등장 효과음 재생
 }
 
 // 힌트 버튼 클릭 시 실행되는 함수
