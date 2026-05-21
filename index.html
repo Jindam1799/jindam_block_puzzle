@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+    />
+    <title>진담 중국어 블록 퍼즐</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div id="light-flash-overlay"></div>
+
+    <div id="start-screen">
+      <h1 class="blink-text">화면을 터치하거나<br />아무 키나 누르세요</h1>
+    </div>
+
+    <div id="lobby-screen" style="display: none">
+      <h1 class="lobby-title">진담 중국어</h1>
+      <p class="lobby-subtitle">중국어 블록 퍼즐</p>
+
+      <div class="mode-buttons">
+        <button class="mode-btn normal-btn" onclick="startGame('normal')">
+          NORMAL MODE<br /><span>(오답 시 장애물 1개)</span>
+        </button>
+        <button class="mode-btn hell-btn" onclick="startGame('hell')">
+          HELL MODE<br /><span>(오답 시 장애물 최대 6개 뭉치)</span>
+        </button>
+        <button class="mode-btn rank-btn" onclick="showRankingScreen('normal')">
+          🏆 명예의 전당 (랭킹)
+        </button>
+      </div>
+    </div>
+
+    <div id="ranking-screen" style="display: none">
+      <h2
+        style="
+          color: #00ffcc;
+          margin-bottom: 20px;
+          font-size: 24pt;
+          text-shadow: 0 0 10px #00ffcc;
+        "
+      >
+        명예의 전당
+      </h2>
+      <div class="ranking-tabs">
+        <button
+          id="tab-normal"
+          class="tab-btn active"
+          onclick="renderRankingList('normal')"
+        >
+          NORMAL
+        </button>
+        <button
+          id="tab-hell"
+          class="tab-btn"
+          onclick="renderRankingList('hell')"
+        >
+          HELL 🔥
+        </button>
+      </div>
+      <div class="ranking-list-container">
+        <ul id="ranking-list"></ul>
+      </div>
+      <button
+        class="option-btn"
+        onclick="returnToLobby()"
+        style="
+          margin-top: 20px;
+          background: linear-gradient(135deg, #4facfe, #00f2fe);
+        "
+      >
+        로비로 돌아가기
+      </button>
+    </div>
+
+    <div id="game-container" style="display: none">
+      <header>
+        <div class="score-box">SCORE: <span id="score">0</span></div>
+        <div class="title-box">모드: <span id="mode-display">NORMAL</span></div>
+      </header>
+
+      <div id="combo-display" class="combo-text"></div>
+      <!-- ★ ALL CLEAR 이펙트 전용 컨테이너 ★ -->
+      <div id="all-clear-display" class="all-clear-text">
+        ALL CLEAR!<br /><span style="font-size: 18pt; color: #fff"
+          >+1000 SCORE</span
+        >
+      </div>
+
+      <div id="quiz-modal" class="modal">
+        <div class="modal-content">
+          <h3>관문을 통과하라!</h3>
+          <p id="quiz-question">문제가 여기에 표시됩니다.</p>
+          <div id="quiz-options"></div>
+          <p id="quiz-feedback" class="feedback"></p>
+        </div>
+      </div>
+
+      <div id="game-over-modal" class="modal">
+        <div
+          class="modal-content"
+          style="
+            border-color: #ff003c;
+            box-shadow: 0 0 30px rgba(255, 0, 60, 0.4);
+          "
+        >
+          <h3
+            style="
+              color: #ff003c;
+              text-shadow: 0 0 10px #ff003c;
+              font-size: 20pt;
+              margin-bottom: 10px;
+            "
+          >
+            GAME OVER
+          </h3>
+          <p
+            id="game-over-stats"
+            style="
+              font-size: 13pt;
+              margin-bottom: 20px;
+              line-height: 1.6;
+              color: #e0e0e0;
+            "
+          ></p>
+
+          <input
+            type="text"
+            id="nickname-input"
+            placeholder="닉네임 입력 (최대 6자)"
+            maxlength="6"
+            autocomplete="off"
+          />
+          <button
+            class="option-btn"
+            onclick="saveRanking()"
+            style="background: linear-gradient(135deg, #ff0844, #ffb199)"
+          >
+            랭킹 등록 및 확인
+          </button>
+        </div>
+      </div>
+
+      <div id="board-wrapper">
+        <div id="grid-board"></div>
+      </div>
+
+      <div id="block-dock">
+        <div class="dock-slot" id="slot-0" data-slot="0"></div>
+        <div class="dock-slot" id="slot-1" data-slot="1"></div>
+        <div class="dock-slot" id="slot-2" data-slot="2"></div>
+      </div>
+    </div>
+
+    <div id="drag-overlay"></div>
+
+    <script src="data.js"></script>
+    <script src="scripts.js"></script>
+  </body>
+</html>
