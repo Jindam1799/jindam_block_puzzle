@@ -20,6 +20,19 @@
       <h1 class="lobby-title">진담 중국어</h1>
       <p class="lobby-subtitle">중국어 블록 퍼즐</p>
 
+      <div class="level-select-container">
+        <button id="btn-lv1" class="level-btn active" onclick="selectLevel(1)">
+          LEVEL 1<br /><span style="font-size: 9pt; font-weight: normal"
+            >기초 단어/문장</span
+          >
+        </button>
+        <button id="btn-lv2" class="level-btn" onclick="selectLevel(2)">
+          LEVEL 2<br /><span style="font-size: 9pt; font-weight: normal"
+            >문장</span
+          >
+        </button>
+      </div>
+
       <div class="mode-buttons">
         <button class="mode-btn normal-btn" onclick="startGame('normal')">
           NORMAL MODE<br />
@@ -78,18 +91,31 @@
     <div id="game-container" style="display: none">
       <header>
         <div class="score-box">SCORE: <span id="score">0</span></div>
-        <div class="title-box">모드: <span id="mode-display">NORMAL</span></div>
+        <div
+          style="
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 8px;
+          "
+        >
+          <div class="title-box">
+            모드: <span id="mode-display">NORMAL</span>
+          </div>
+          <!-- ★ 포기하기 버튼 추가 ★ -->
+          <button class="give-up-btn" onclick="showGiveUpModal()">
+            🏠 로비로 돌아가기
+          </button>
+        </div>
       </header>
 
       <div id="combo-display" class="combo-text"></div>
-      <!-- ★ ALL CLEAR 이펙트 전용 컨테이너 ★ -->
       <div id="all-clear-display" class="all-clear-text">
         ALL CLEAR!<br /><span style="font-size: 18pt; color: #fff"
           >+1000 SCORE</span
         >
       </div>
 
-      <!-- ★ 퀴즈 팝업창 (힌트 기능 추가) ★ -->
       <div id="quiz-modal" class="modal" style="z-index: 300">
         <div
           class="modal-content"
@@ -100,7 +126,6 @@
         >
           <h3 style="color: #00ffcc; margin-bottom: 15px">퀴즈!</h3>
 
-          <!-- 문제 (중국어 간체자) -->
           <p
             id="quiz-question"
             style="
@@ -111,24 +136,48 @@
             "
           ></p>
 
-          <!-- 병음 힌트 버튼 및 텍스트 영역 -->
-          <button
-            id="hint-btn"
-            onclick="showHint()"
+          <div
             style="
-              background: rgba(0, 255, 204, 0.1);
-              border: 1px solid #00ffcc;
-              color: #00ffcc;
-              padding: 8px 15px;
-              border-radius: 8px;
-              cursor: pointer;
+              display: flex;
+              justify-content: center;
+              gap: 10px;
               margin-bottom: 15px;
-              font-weight: bold;
-              transition: 0.2s;
             "
           >
-            💡 병음 힌트 보기
-          </button>
+            <button
+              id="tts-replay-btn"
+              onclick="replayTTS()"
+              style="
+                background: rgba(255, 102, 204, 0.1);
+                border: 1px solid #ff66cc;
+                color: #ff66cc;
+                padding: 8px 15px;
+                border-radius: 8px;
+                cursor: pointer;
+                font-weight: bold;
+                transition: 0.2s;
+              "
+            >
+              🔊 음성 다시듣기
+            </button>
+            <button
+              id="hint-btn"
+              onclick="showHint()"
+              style="
+                background: rgba(0, 255, 204, 0.1);
+                border: 1px solid #00ffcc;
+                color: #00ffcc;
+                padding: 8px 15px;
+                border-radius: 8px;
+                cursor: pointer;
+                font-weight: bold;
+                transition: 0.2s;
+              "
+            >
+              💡 병음 힌트 보기
+            </button>
+          </div>
+
           <p
             id="quiz-pinyin"
             style="
@@ -141,12 +190,62 @@
             "
           ></p>
 
-          <!-- 보기 3개 -->
           <div id="quiz-options"></div>
           <p id="quiz-feedback" class="feedback"></p>
         </div>
       </div>
+      <!-- ★ 복습 모달 (게임 오버 시 표시) ★ -->
+      <div id="review-modal" class="modal" style="z-index: 350">
+        <div
+          class="modal-content"
+          style="
+            border-color: #f6d365;
+            box-shadow: 0 0 30px rgba(246, 211, 101, 0.4);
+            height: 75vh;
+            display: flex;
+            flex-direction: column;
+          "
+        >
+          <h3
+            style="
+              color: #f6d365;
+              text-shadow: 0 0 10px #f6d365;
+              font-size: 20pt;
+              margin-bottom: 10px;
+            "
+          >
+            학습 복습하기 📚
+          </h3>
+          <p style="color: #ccc; margin-bottom: 15px; font-size: 12pt">
+            이번 판에 맞힌 문장들을 다시 들어보세요!
+          </p>
 
+          <div
+            id="review-list"
+            style="
+              overflow-y: auto;
+              flex: 1;
+              margin-bottom: 20px;
+              text-align: left;
+              padding: 0 5px;
+            "
+          >
+            <!-- 복습 아이템들이 여기에 동적으로 추가됨 -->
+          </div>
+
+          <button
+            class="option-btn"
+            onclick="goToGameOverModal()"
+            style="
+              background: linear-gradient(135deg, #4facfe, #00f2fe);
+              margin-bottom: 0;
+            "
+          >
+            랭킹 등록하러 가기 ➡️
+          </button>
+        </div>
+      </div>
+      <!-- 게임 오버 모달 -->
       <div id="game-over-modal" class="modal">
         <div
           class="modal-content"
@@ -182,17 +281,36 @@
             maxlength="6"
             autocomplete="off"
           />
-          <button
-            class="option-btn"
-            onclick="saveRanking()"
-            style="background: linear-gradient(135deg, #ff0844, #ffb199)"
-          >
-            랭킹 등록 및 확인
-          </button>
+
+          <!-- ★ 버튼 두 개로 분리 ★ -->
+          <div style="display: flex; gap: 10px">
+            <button
+              class="option-btn"
+              onclick="saveRanking()"
+              style="
+                background: linear-gradient(135deg, #ff0844, #ffb199);
+                margin-bottom: 0;
+                flex: 6;
+              "
+            >
+              랭킹 등록
+            </button>
+            <button
+              class="option-btn"
+              onclick="skipRankingAndGoLobby()"
+              style="
+                background: rgba(255, 255, 255, 0.2);
+                margin-bottom: 0;
+                flex: 4;
+                font-size: 11pt;
+              "
+            >
+              로비로 가기
+            </button>
+          </div>
         </div>
       </div>
 
-      <!-- ★ 닉네임 미입력 경고 커스텀 팝업창 ★ -->
       <div id="alert-modal" class="modal" style="z-index: 300">
         <div
           class="modal-content"
@@ -245,6 +363,60 @@
         <div class="dock-slot" id="slot-0" data-slot="0"></div>
         <div class="dock-slot" id="slot-1" data-slot="1"></div>
         <div class="dock-slot" id="slot-2" data-slot="2"></div>
+      </div>
+    </div>
+
+    <!-- ★ 로비로 돌아가기 확인 모달 ★ -->
+    <div id="giveup-modal" class="modal" style="z-index: 400">
+      <div
+        class="modal-content"
+        style="
+          border-color: #ff3333;
+          box-shadow: 0 0 30px rgba(255, 51, 51, 0.4);
+        "
+      >
+        <h3
+          style="
+            color: #ff3333;
+            text-shadow: 0 0 10px #ff3333;
+            font-size: 18pt;
+            margin-bottom: 15px;
+          "
+        >
+          게임 종료
+        </h3>
+        <p
+          style="
+            font-size: 14pt;
+            margin-bottom: 25px;
+            line-height: 1.6;
+            color: #fff;
+          "
+        >
+          정말 로비로 돌아가시겠습니까?<br />
+          <span style="font-size: 11pt; color: #aaa"
+            >(지금까지 맞힌 문장들을 복습합니다.)</span
+          >
+        </p>
+        <div style="display: flex; gap: 10px">
+          <button
+            class="option-btn"
+            onclick="processGiveUp(true)"
+            style="
+              background: linear-gradient(135deg, #ff0844, #ffb199);
+              margin-bottom: 0;
+            "
+          >
+            예
+          </button>
+          <button
+            class="option-btn"
+            onclick="processGiveUp(false)"
+            style="background: rgba(255, 255, 255, 0.2); margin-bottom: 0"
+          >
+            아니오
+          </button>
+        </div>
       </div>
     </div>
 
