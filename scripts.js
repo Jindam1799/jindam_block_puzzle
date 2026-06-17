@@ -1432,3 +1432,57 @@ function skipRankingAndGoLobby() {
   document.getElementById('nickname-input').value = '';
   playBGM('intro');
 }
+// ==========================================
+// ★ 1. 플레이 중 '로비로 돌아가기' 버튼 모달 띄우기
+// ==========================================
+function showGiveUpModal() {
+  document.getElementById('giveup-modal').classList.add('active');
+}
+
+// ==========================================
+// ★ 2. '로비로 돌아가기' 예/아니오 결과 처리
+// ==========================================
+function processGiveUp(isYes) {
+  // 모달 닫기
+  document.getElementById('giveup-modal').classList.remove('active');
+
+  if (!isYes) return; // '아니오'를 누르면 그대로 게임 진행
+
+  // '예'를 누른 경우: 게임 즉시 중단
+  isDragging = false;
+  document.getElementById('drag-overlay').style.display = 'none';
+  clearShadow();
+
+  // 게임 오버 연출 (보드판 흐리게)
+  const boardWrapper = document.getElementById('board-wrapper');
+  if (boardWrapper) {
+    boardWrapper.style.transition = 'all 1s ease';
+    boardWrapper.style.filter = 'grayscale(0.6) brightness(0.5)';
+  }
+
+  // BGM을 리더보드용으로 교체하고 AI 점수 업데이트
+  growAIRivals(gameMode);
+  playBGM('leaderboard');
+
+  // 곧바로 복습 모달 띄우기 (지금까지 맞힌 내용만 표시됨)
+  showReviewModal();
+}
+
+// ==========================================
+// ★ 3. 랭킹 등록 건너뛰고 바로 로비로 복귀하기
+// ==========================================
+function skipRankingAndGoLobby() {
+  // 열려있는 모달 모두 닫기
+  document.getElementById('game-over-modal').classList.remove('active');
+  document.getElementById('review-modal').classList.remove('active');
+
+  // 게임 화면 숨기고 로비 화면 띄우기
+  document.getElementById('game-container').style.display = 'none';
+  document.getElementById('lobby-screen').style.display = 'flex';
+
+  // 닉네임 입력칸 초기화
+  document.getElementById('nickname-input').value = '';
+
+  // 로비 BGM 재생
+  playBGM('intro');
+}
