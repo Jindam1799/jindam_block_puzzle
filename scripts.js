@@ -35,12 +35,6 @@ const AUDIO_SOURCES = {
   ].map((src) => new Audio(src)),
 };
 
-// ★ 배경음악 볼륨을 일괄적으로 15% (0.15)로 대폭 축소 ★
-AUDIO_SOURCES.intro.volume = 0.15;
-AUDIO_SOURCES.leaderboard.volume = 0.15;
-AUDIO_SOURCES.normal.forEach((a) => (a.volume = 0.15));
-AUDIO_SOURCES.hell.forEach((a) => (a.volume = 0.15));
-
 let currentAudio = null;
 let currentPlaylist = [];
 let currentTrackIndex = 0;
@@ -51,9 +45,15 @@ function stopAllBGM() {
     currentAudio.currentTime = 0;
   }
 }
-
+// ==========================================
+// ★ 오디오(BGM) 관리 시스템 (재생 시점에 15% 고정) ★
+// ==========================================
 function playNextTrack() {
   currentAudio = currentPlaylist[currentTrackIndex];
+
+  // ★ 트랙이 바뀔 때마다 무조건 15%로 고정
+  currentAudio.volume = 0.2;
+
   currentAudio.onended = () => {
     currentTrackIndex = (currentTrackIndex + 1) % currentPlaylist.length;
     playNextTrack();
@@ -66,6 +66,10 @@ function playBGM(type) {
   if (type === 'intro' || type === 'leaderboard') {
     currentAudio = AUDIO_SOURCES[type];
     currentAudio.loop = true;
+
+    // ★ 인트로나 랭킹 브금이 켜질 때 무조건 15%로 고정
+    currentAudio.volume = 0.2;
+
     currentAudio.play().catch((e) => console.log('Audio blocked.'));
   } else {
     currentPlaylist = AUDIO_SOURCES[type];
@@ -1218,14 +1222,13 @@ function checkGameOverCondition() {
   }
 }
 // ==========================================
-// ★ Web Audio API 기반 커스텀 사운드 효과 ★
+// ★ Web Audio API 사운드 효과 (전체 볼륨 하향 최적화) ★
 // ==========================================
 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 const scaleFrequencies = [
   261.63, 293.66, 329.63, 349.23, 392.0, 440.0, 493.88, 523.25,
-]; // 도레미파솔라시도
+];
 
-// 1. 퀴즈 등장 효과음 (띠로롱~) - 볼륨 2배 증가
 function playQuizPopupSound() {
   if (audioCtx.state === 'suspended') audioCtx.resume();
   const osc = audioCtx.createOscillator();
@@ -1233,7 +1236,7 @@ function playQuizPopupSound() {
   osc.type = 'sine';
   osc.frequency.setValueAtTime(400, audioCtx.currentTime);
   osc.frequency.exponentialRampToValueAtTime(800, audioCtx.currentTime + 0.15);
-  gain.gain.setValueAtTime(1.0, audioCtx.currentTime); // 볼륨 1.0으로 상향
+  gain.gain.setValueAtTime(0.3, audioCtx.currentTime); // 1.0 -> 0.3
   gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.3);
   osc.connect(gain);
   gain.connect(audioCtx.destination);
@@ -1241,7 +1244,6 @@ function playQuizPopupSound() {
   osc.stop(audioCtx.currentTime + 0.3);
 }
 
-// 2. 블록 제거 타격 효과음 (파직!) - 볼륨 2.4배 증가
 function playClearSound() {
   if (audioCtx.state === 'suspended') audioCtx.resume();
   const osc = audioCtx.createOscillator();
@@ -1249,7 +1251,7 @@ function playClearSound() {
   osc.type = 'square';
   osc.frequency.setValueAtTime(150, audioCtx.currentTime);
   osc.frequency.exponentialRampToValueAtTime(40, audioCtx.currentTime + 0.15);
-  gain.gain.setValueAtTime(1.2, audioCtx.currentTime); // 볼륨 1.2로 상향 (강한 타격감)
+  gain.gain.setValueAtTime(0.4, audioCtx.currentTime); // 1.2 -> 0.4
   gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.2);
   osc.connect(gain);
   gain.connect(audioCtx.destination);
@@ -1257,10 +1259,8 @@ function playClearSound() {
   osc.stop(audioCtx.currentTime + 0.2);
 }
 
-// 3. 다중 라인 제거 시 아르페지오 (도-레-미 연속 재생) - 볼륨 증가
 function playSequentialComboSounds(startCombo, linesCleared) {
   if (audioCtx.state === 'suspended') audioCtx.resume();
-
   for (let i = 0; i < linesCleared; i++) {
     const currentComboCount = startCombo + i;
     const scaleIndex = (currentComboCount - 1) % 8;
@@ -1272,16 +1272,14 @@ function playSequentialComboSounds(startCombo, linesCleared) {
 
     const oscillator = audioCtx.createOscillator();
     const gainNode = audioCtx.createGain();
-    oscillator.type = 'sawtooth'; // 레트로 오락실 느낌 파형
+    oscillator.type = 'sawtooth';
 
-    // 0.15초 간격으로 스케줄링하여 아르페지오 연출
     const startTime = audioCtx.currentTime + i * 0.15;
     const stopTime = startTime + 0.4;
 
     oscillator.frequency.setValueAtTime(freq, startTime);
-
-    gainNode.gain.setValueAtTime(0.0, audioCtx.currentTime); // 시작 전엔 음소거
-    gainNode.gain.setValueAtTime(1.0, startTime); // 볼륨 1.0으로 상향
+    gainNode.gain.setValueAtTime(0.0, audioCtx.currentTime);
+    gainNode.gain.setValueAtTime(0.3, startTime); // 1.0 -> 0.3
     gainNode.gain.exponentialRampToValueAtTime(0.001, stopTime);
 
     oscillator.connect(gainNode);
@@ -1291,16 +1289,15 @@ function playSequentialComboSounds(startCombo, linesCleared) {
   }
 }
 
-// 4. 정답 효과음 (밝고 경쾌한 상승음)
 function playCorrectSound() {
   if (audioCtx.state === 'suspended') audioCtx.resume();
   const osc = audioCtx.createOscillator();
   const gain = audioCtx.createGain();
   osc.type = 'triangle';
-  osc.frequency.setValueAtTime(440, audioCtx.currentTime); // A4
-  osc.frequency.setValueAtTime(554.37, audioCtx.currentTime + 0.1); // C#5
-  osc.frequency.setValueAtTime(659.25, audioCtx.currentTime + 0.2); // E5
-  gain.gain.setValueAtTime(1.0, audioCtx.currentTime); // 볼륨 1.0
+  osc.frequency.setValueAtTime(440, audioCtx.currentTime);
+  osc.frequency.setValueAtTime(554.37, audioCtx.currentTime + 0.1);
+  osc.frequency.setValueAtTime(659.25, audioCtx.currentTime + 0.2);
+  gain.gain.setValueAtTime(0.4, audioCtx.currentTime); // 1.0 -> 0.4
   gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.4);
   osc.connect(gain);
   gain.connect(audioCtx.destination);
@@ -1308,20 +1305,96 @@ function playCorrectSound() {
   osc.stop(audioCtx.currentTime + 0.4);
 }
 
-// 5. 오답 효과음 (둔탁하고 하락하는 경고음)
 function playWrongSound() {
   if (audioCtx.state === 'suspended') audioCtx.resume();
   const osc = audioCtx.createOscillator();
   const gain = audioCtx.createGain();
   osc.type = 'sawtooth';
-  osc.frequency.setValueAtTime(200, audioCtx.currentTime); // 낮은 주파수
+  osc.frequency.setValueAtTime(200, audioCtx.currentTime);
   osc.frequency.exponentialRampToValueAtTime(50, audioCtx.currentTime + 0.4);
-  gain.gain.setValueAtTime(1.0, audioCtx.currentTime); // 볼륨 1.0
+  gain.gain.setValueAtTime(0.4, audioCtx.currentTime); // 1.0 -> 0.4
   gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.4);
   osc.connect(gain);
   gain.connect(audioCtx.destination);
   osc.start();
   osc.stop(audioCtx.currentTime + 0.4);
+}
+
+function playBombSound() {
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = 'sawtooth';
+  osc.frequency.setValueAtTime(100, audioCtx.currentTime);
+  osc.frequency.exponentialRampToValueAtTime(10, audioCtx.currentTime + 0.5);
+  gain.gain.setValueAtTime(0.6, audioCtx.currentTime); // 2.0 -> 0.6
+  gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.5);
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+  osc.start();
+  osc.stop(audioCtx.currentTime + 0.5);
+}
+
+function playBonusSpawnSound() {
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(600, audioCtx.currentTime);
+  osc.frequency.linearRampToValueAtTime(1200, audioCtx.currentTime + 0.3);
+  gain.gain.setValueAtTime(0.2, audioCtx.currentTime); // 0.6 -> 0.2
+  gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.4);
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+  osc.start();
+  osc.stop(audioCtx.currentTime + 0.4);
+}
+
+function playObstacleSpawnSound() {
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = 'square';
+  osc.frequency.setValueAtTime(100, audioCtx.currentTime);
+  osc.frequency.exponentialRampToValueAtTime(30, audioCtx.currentTime + 0.4);
+  gain.gain.setValueAtTime(0.4, audioCtx.currentTime); // 1.2 -> 0.4
+  gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.4);
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+  osc.start();
+  osc.stop(audioCtx.currentTime + 0.4);
+}
+
+function playRerollSound() {
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(800, audioCtx.currentTime);
+  osc.frequency.exponentialRampToValueAtTime(100, audioCtx.currentTime + 0.3);
+  gain.gain.setValueAtTime(0.3, audioCtx.currentTime); // 0.8 -> 0.3
+  gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.3);
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+  osc.start();
+  osc.stop(audioCtx.currentTime + 0.3);
+}
+
+function playBuffSound() {
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = 'square';
+  osc.frequency.setValueAtTime(300, audioCtx.currentTime);
+  osc.frequency.setValueAtTime(400, audioCtx.currentTime + 0.1);
+  osc.frequency.setValueAtTime(600, audioCtx.currentTime + 0.2);
+  osc.frequency.setValueAtTime(800, audioCtx.currentTime + 0.3);
+  gain.gain.setValueAtTime(0.2, audioCtx.currentTime); // 0.6 -> 0.2
+  gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.6);
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+  osc.start();
+  osc.stop(audioCtx.currentTime + 0.6);
 }
 // ==========================================
 // ★ 복습 시스템 및 랭킹 전환 ★
