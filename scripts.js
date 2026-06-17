@@ -284,6 +284,7 @@ let gameMode = 'normal';
 let currentCombo = 0;
 let maxComboThisRound = 0;
 let linesClearedThisRound = 0;
+let wrongReviewList = []; // ★ 추가: 틀린 문제들을 모아두는 배열 (게임 오버 시 리뷰용)
 let currentQuiz = null; // 현재 출제된 문제를 저장할 변수
 let availableQuizzes = []; // ★ 퀴즈 중복 출제 방지를 위한 남은 문제 배열
 const GOOD_BLOCKS = [
@@ -478,6 +479,7 @@ function startGame(mode) {
   linesClearedThisRound = 0;
   correctQuizzesThisRound = []; // ★ 새 게임 시작 시 맞힌 문제 배열 초기화 추가 ★
   availableQuizzes = []; // ★ 새 게임 시작 시 문제 덱 초기화 추가 ★
+  wrongReviewList = []; // 게임을 새로 시작할 때마다 초기화
   initBoardHTML();
   generateDockBlocks();
   setupTouchEvents();
@@ -671,19 +673,21 @@ function triggerNewQuiz() {
       if (synth.speaking) synth.cancel(); // 정답/오답 클릭 시 남은 음성 끄기
 
       if (opt === currentQuiz.a) {
+        // (정답 처리 로직 유지)
         playCorrectSound();
         feedback.innerText = '정답입니다!';
         feedback.style.color = '#00ff00';
-        // ★ 정답 문장 기록하기 (중복 방지를 위해 리스트에 없는 경우만)
+
         if (!correctQuizzesThisRound.some((q) => q.q === currentQuiz.q)) {
           correctQuizzesThisRound.push(currentQuiz);
         }
-        // 정답을 맞히면 예전처럼 0.7초 후 빠르게 창 닫고 블록 생성
+
         setTimeout(() => {
           modal.classList.remove('active');
           generateDockBlocks();
         }, 700);
       } else {
+        // (오답 처리 로직)
         playWrongSound();
         feedback.innerText =
           gameMode === 'hell'
@@ -692,6 +696,11 @@ function triggerNewQuiz() {
         feedback.style.color = '#ff3333';
         currentCombo = 0;
         linesClearedThisRound = 0;
+
+        // ★ 여기에 추가: 틀린 문장 기록하기 (중복 방지)
+        if (!wrongReviewList.some((q) => q.q === currentQuiz.q)) {
+          wrongReviewList.push(currentQuiz);
+        }
 
         setTimeout(() => {
           modal.classList.remove('active');
@@ -1319,100 +1328,107 @@ function playWrongSound() {
 // ==========================================
 function showReviewModal() {
   const reviewModal = document.getElementById('review-modal');
-  const reviewList = document.getElementById('review-list');
-  reviewList.innerHTML = '';
+  const listContainer = document.getElementById('review-list');
+  listContainer.innerHTML = ''; // 기존 목록 초기화
 
-  // 맞힌 문제가 하나도 없는 경우
-  if (correctQuizzesThisRound.length === 0) {
-    reviewList.innerHTML = `
-      <p style="color: #888; text-align: center; padding: 30px; font-size: 14pt;">
-        아쉽게도 맞힌 문제가 없습니다. 😭<br><br>다음에는 꼭 성공할 수 있어요!
-      </p>`;
-  } else {
-    // 배열에 저장된 정답들을 리스트에 예쁘게 그려줌
-    correctQuizzesThisRound.forEach((quiz) => {
-      const itemDiv = document.createElement('div');
-      itemDiv.className = 'review-item';
-      itemDiv.innerHTML = `
-        <div class="review-q">${quiz.q}</div>
-        <div class="review-pinyin">${quiz.pinyin}</div>
-        <div class="review-a">${quiz.a}</div>
-        <button class="review-tts-btn" onclick="speakChineseTTS('${quiz.q}')">🔊</button>
+  // ==========================================
+  // 🟢 1. 맞힌 문장 렌더링
+  // ==========================================
+  if (
+    typeof correctQuizzesThisRound !== 'undefined' &&
+    correctQuizzesThisRound.length > 0
+  ) {
+    const correctTitle = document.createElement('h4');
+    correctTitle.innerHTML = '🟢 맞힌 문장';
+    correctTitle.style.color = '#a8ff78';
+    correctTitle.style.marginTop = '10px';
+    correctTitle.style.marginBottom = '10px';
+    listContainer.appendChild(correctTitle);
+
+    correctQuizzesThisRound.forEach((item) => {
+      const div = document.createElement('div');
+      div.className = 'review-item';
+      div.style.background = 'rgba(0, 255, 204, 0.1)';
+      div.style.border = '1px solid #00ffcc';
+      div.style.padding = '12px';
+      div.style.marginBottom = '10px';
+      div.style.borderRadius = '8px';
+      div.style.position = 'relative';
+      div.style.paddingRight = '60px'; // 우측 버튼 공간 확보
+
+      div.innerHTML = `
+        <div style="font-size: 15pt; font-weight: bold; color: #fff;">${item.q}</div>
+        <div style="font-size: 11pt; color: #ff00ff; font-style: italic; margin-top: 4px;">${item.pinyin}</div>
+        <div style="font-size: 12pt; color: #00ffcc; margin-top: 4px;">${item.a}</div>
+        <button class="review-tts-btn" onclick="speakChineseTTS('${item.q}')">🔊</button>
       `;
-      reviewList.appendChild(itemDiv);
+      listContainer.appendChild(div);
     });
+  }
+
+  // ==========================================
+  // 🔴 2. 틀린 문장 렌더링 (빨간색 테마)
+  // ==========================================
+  if (typeof wrongReviewList !== 'undefined' && wrongReviewList.length > 0) {
+    const wrongTitle = document.createElement('h4');
+    wrongTitle.innerHTML = '🔴 다시 볼 문장 (오답)';
+    wrongTitle.style.color = '#ff4d4d';
+    wrongTitle.style.marginTop = '20px';
+    wrongTitle.style.marginBottom = '10px';
+    listContainer.appendChild(wrongTitle);
+
+    wrongReviewList.forEach((item) => {
+      const div = document.createElement('div');
+      div.className = 'review-item';
+      div.style.background = 'rgba(255, 51, 51, 0.1)';
+      div.style.border = '1px solid #ff4d4d';
+      div.style.padding = '12px';
+      div.style.marginBottom = '10px';
+      div.style.borderRadius = '8px';
+      div.style.position = 'relative';
+      div.style.paddingRight = '60px'; // 우측 버튼 공간 확보
+
+      div.innerHTML = `
+        <div style="font-size: 15pt; font-weight: bold; color: #ff4d4d;">${item.q}</div>
+        <div style="font-size: 11pt; color: #ff9999; font-style: italic; margin-top: 4px;">${item.pinyin}</div>
+        <div style="font-size: 12pt; color: #ffe6e6; margin-top: 4px;">${item.a}</div>
+        <button class="review-tts-btn" onclick="speakChineseTTS('${item.q}')" style="border-color: #ff4d4d; color: #ff4d4d; background: rgba(255, 51, 51, 0.1);">🔊</button>
+      `;
+      listContainer.appendChild(div);
+    });
+  }
+
+  // 데이터가 아예 없는 경우
+  if (correctQuizzesThisRound.length === 0 && wrongReviewList.length === 0) {
+    listContainer.innerHTML =
+      '<p style="color: #ccc; text-align: center; margin-top: 40px; font-size: 14pt;">학습한 내용이 없습니다.</p>';
   }
 
   reviewModal.classList.add('active');
 }
 
 function goToGameOverModal() {
-  // 복습 모달 닫기
   document.getElementById('review-modal').classList.remove('active');
-
-  // 기존 랭킹/점수 기록 팝업 열기
   const gameOverModal = document.getElementById('game-over-modal');
   const statsText = document.getElementById('game-over-stats');
 
-  // 맞힌 문제 개수 통계 추가
   statsText.innerHTML = `
     모드: <strong style="color:#ff00ff;">${gameMode.toUpperCase()}</strong><br>
     최종 점수: <strong style="color:#00ffcc;">${score}</strong> 점<br>
     최대 콤보: <strong style="color:#ffaf7b;">${maxComboThisRound}</strong> Combo<br>
-    학습한 문장: <strong style="color:#f6d365;">${correctQuizzesThisRound.length}</strong> 개
+    맞힌 문장: <strong style="color:#a8ff78;">${correctQuizzesThisRound.length}</strong> 개<br>
+    틀린 문장: <strong style="color:#ff4d4d;">${wrongReviewList.length}</strong> 개
   `;
   gameOverModal.classList.add('active');
 }
 
 // ==========================================
-// ★ 로비로 돌아가기 (게임 종료) 기능 ★
-// ==========================================
-
-// 1. 확인 모달 띄우기
-function showGiveUpModal() {
-  document.getElementById('giveup-modal').classList.add('active');
-}
-
-// 2. 예/아니오 선택 결과 처리
-function processGiveUp(isYes) {
-  // 모달 닫기
-  document.getElementById('giveup-modal').classList.remove('active');
-
-  if (!isYes) return; // '아니오'를 누르면 그대로 게임 계속 진행
-
-  // '예'를 누른 경우: 게임 종료 처리
-  isDragging = false;
-  document.getElementById('drag-overlay').style.display = 'none';
-  clearShadow();
-
-  // 게임 오버 연출 (보드판 흐리게)
-  const boardWrapper = document.getElementById('board-wrapper');
-  if (boardWrapper) {
-    boardWrapper.style.transition = 'all 1s ease';
-    boardWrapper.style.filter = 'grayscale(0.6) brightness(0.5)';
-  }
-
-  // BGM을 리더보드용으로 교체하고 AI 라이벌 점수 성장 처리
-  growAIRivals(gameMode);
-  playBGM('leaderboard');
-
-  // 곧바로 복습 모달 띄우기 (종료하기 전까지 맞힌 내용만 표시됨)
-  showReviewModal();
-}
-// ==========================================
 // ★ 랭킹 등록 건너뛰기 및 로비 복귀 ★
 // ==========================================
 function skipRankingAndGoLobby() {
-  // 모달 닫기
   document.getElementById('game-over-modal').classList.remove('active');
-
-  // 게임 화면 숨기고 로비 화면 띄우기
   document.getElementById('game-container').style.display = 'none';
   document.getElementById('lobby-screen').style.display = 'flex';
-
-  // 닉네임 입력칸 초기화
   document.getElementById('nickname-input').value = '';
-
-  // 로비 BGM 재생
   playBGM('intro');
 }
