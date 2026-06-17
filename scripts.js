@@ -34,10 +34,17 @@ const AUDIO_SOURCES = {
     'hell_bgm4.mp3',
   ].map((src) => new Audio(src)),
 };
+
+// ★ 배경음악 볼륨을 일괄적으로 15% (0.15)로 대폭 축소 ★
+AUDIO_SOURCES.intro.volume = 0.15;
+AUDIO_SOURCES.leaderboard.volume = 0.15;
+AUDIO_SOURCES.normal.forEach((a) => (a.volume = 0.15));
+AUDIO_SOURCES.hell.forEach((a) => (a.volume = 0.15));
+
 let currentAudio = null;
 let currentPlaylist = [];
 let currentTrackIndex = 0;
-
+// ... (이하 기존 stopAllBGM() 등의 코드는 그대로 유지)
 function stopAllBGM() {
   if (currentAudio) {
     currentAudio.pause();
@@ -268,6 +275,7 @@ const BOARD_SIZE = 8;
 let board = Array(BOARD_SIZE)
   .fill(null)
   .map(() => Array(BOARD_SIZE).fill(0));
+let correctQuizzesThisRound = []; // ★ 추가: 이번 판에 맞힌 문제들을 모아두는 배열
 let score = 0;
 let currentDockBlocks = [null, null, null];
 let activeDragIndex = null;
@@ -468,6 +476,7 @@ function startGame(mode) {
   currentCombo = 0;
   maxComboThisRound = 0;
   linesClearedThisRound = 0;
+  correctQuizzesThisRound = []; // ★ 새 게임 시작 시 맞힌 문제 배열 초기화 추가 ★
   availableQuizzes = []; // ★ 새 게임 시작 시 문제 덱 초기화 추가 ★
   initBoardHTML();
   generateDockBlocks();
@@ -505,8 +514,108 @@ function renderBoard() {
   document.getElementById('score').innerText = score;
 }
 // ==========================================
-// ★ 퀴즈 시스템 (힌트 보기 & 중복 방지 로직) ★
+// ★ Web Speech API 기반 중국어 TTS (자막 제거 / 즉시 재생) ★
 // ==========================================
+let synth = window.speechSynthesis;
+let chineseVoices = [];
+
+function loadVoices() {
+  let voices = synth.getVoices();
+  chineseVoices = voices.filter(
+    (v) => v.lang.includes('zh') || v.lang.includes('cmn'),
+  );
+}
+loadVoices();
+if (synth.onvoiceschanged !== undefined) {
+  synth.onvoiceschanged = loadVoices;
+}
+
+function speakChineseTTS(text) {
+  if (synth.speaking) synth.cancel(); // 기존 음성이 있다면 끊고 새로 시작
+
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.lang = 'zh-CN';
+
+  // 1. 남성 목소리 철저히 배제 (필터링)
+  const maleKeywords = [
+    'male',
+    'kangkang',
+    'jianjian',
+    'yunjian',
+    'yunxi',
+    'yunyang',
+    'boy',
+    'man',
+  ];
+  let safeVoices = chineseVoices.filter((v) => {
+    let name = v.name.toLowerCase();
+    return !maleKeywords.some((kw) => name.includes(kw));
+  });
+
+  // 2. 알려진 모든 OS의 여성 보이스 키워드 총동원
+  const femaleKeywords = [
+    'female',
+    'xiaoxiao',
+    'yaoyao',
+    'huihui',
+    'ting-ting',
+    'tingting',
+    'mei-jia',
+    'meijia',
+    'lili',
+    'shanshan',
+    'yanting',
+    'qien-ru',
+    'sin-ji',
+    'sinji',
+    'zhiyu',
+    'zhimin',
+    'girl',
+    'woman',
+  ];
+
+  let selectedVoice = safeVoices.find((v) => {
+    let name = v.name.toLowerCase();
+    return femaleKeywords.some((kw) => name.includes(kw));
+  });
+
+  // 여성 키워드가 명시되어 있지 않다면, 남성 보이스가 제외된 안전한 보이스 중 첫 번째 선택
+  if (!selectedVoice && safeVoices.length > 0) {
+    selectedVoice = safeVoices[0];
+  }
+
+  if (selectedVoice) {
+    utterance.voice = selectedVoice;
+  } else if (chineseVoices.length > 0) {
+    utterance.voice = chineseVoices[0];
+  }
+
+  // ★ 3. 강제 여성톤 만들기: 음높이(pitch)를 1.4로 대폭 올려서 무조건 하이톤으로 들리게 조절 ★
+  utterance.pitch = 1.0;
+  utterance.rate = 0.7; // 0.7배속 유지
+
+  synth.speak(utterance);
+}
+
+// 다시듣기 버튼 작동 함수
+function replayTTS() {
+  if (currentQuiz) {
+    speakChineseTTS(currentQuiz.q);
+  }
+}
+
+// ==========================================
+// ★ 퀴즈 시스템 ★
+// ==========================================
+let currentLevel = 1;
+
+function selectLevel(level) {
+  currentLevel = level;
+  document.getElementById('btn-lv1').classList.toggle('active', level === 1);
+  document.getElementById('btn-lv2').classList.toggle('active', level === 2);
+  availableQuizzes = [];
+}
+
 function triggerNewQuiz() {
   const modal = document.getElementById('quiz-modal');
   const feedback = document.getElementById('quiz-feedback');
@@ -514,14 +623,26 @@ function triggerNewQuiz() {
   const pinyinDisplay = document.getElementById('quiz-pinyin');
 
   feedback.innerText = '';
-
-  // 팝업이 뜰 때마다 힌트 상태 초기화
   hintBtn.style.display = 'inline-block';
   pinyinDisplay.style.display = 'none';
 
-  // ★ 중복 방지 로직: 남은 문제가 없으면 원본 데이터를 복사하고 무작위로 섞음 (피셔-예이츠 셔플) ★
   if (availableQuizzes.length === 0) {
-    availableQuizzes = [...QUIZ_DATA]; // 데이터 복사
+    const sourceData =
+      currentLevel === 1
+        ? typeof QUIZ_DATA_LEVEL1 !== 'undefined'
+          ? QUIZ_DATA_LEVEL1
+          : []
+        : typeof QUIZ_DATA_LEVEL2 !== 'undefined'
+          ? QUIZ_DATA_LEVEL2
+          : [];
+
+    if (sourceData.length === 0) {
+      console.warn('경고: 퀴즈 데이터가 없습니다! 블록만 생성합니다.');
+      generateDockBlocks();
+      return;
+    }
+
+    availableQuizzes = [...sourceData];
     for (let i = availableQuizzes.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [availableQuizzes[i], availableQuizzes[j]] = [
@@ -531,7 +652,6 @@ function triggerNewQuiz() {
     }
   }
 
-  // 섞여 있는 배열의 맨 끝에서 문제를 하나씩 뽑아 출제 (한 바퀴 돌 때까지 중복 절대 불가)
   currentQuiz = availableQuizzes.pop();
 
   document.getElementById('quiz-question').innerText = currentQuiz.q;
@@ -545,20 +665,26 @@ function triggerNewQuiz() {
     btn.className = 'option-btn';
     btn.innerText = opt;
     btn.onclick = () => {
-      // 더블 클릭 방지
       const allBtns = optionsContainer.querySelectorAll('button');
       allBtns.forEach((b) => (b.disabled = true));
 
+      if (synth.speaking) synth.cancel(); // 정답/오답 클릭 시 남은 음성 끄기
+
       if (opt === currentQuiz.a) {
-        playCorrectSound(); // 정답 효과음 재생
+        playCorrectSound();
         feedback.innerText = '정답입니다!';
         feedback.style.color = '#00ff00';
+        // ★ 정답 문장 기록하기 (중복 방지를 위해 리스트에 없는 경우만)
+        if (!correctQuizzesThisRound.some((q) => q.q === currentQuiz.q)) {
+          correctQuizzesThisRound.push(currentQuiz);
+        }
+        // 정답을 맞히면 예전처럼 0.7초 후 빠르게 창 닫고 블록 생성
         setTimeout(() => {
           modal.classList.remove('active');
           generateDockBlocks();
         }, 700);
       } else {
-        playWrongSound(); // 오답 효과음 재생
+        playWrongSound();
         feedback.innerText =
           gameMode === 'hell'
             ? '오답! 장애물 최대 6개 투하!'
@@ -566,6 +692,7 @@ function triggerNewQuiz() {
         feedback.style.color = '#ff3333';
         currentCombo = 0;
         linesClearedThisRound = 0;
+
         setTimeout(() => {
           modal.classList.remove('active');
           spawnObstacleStone(gameMode);
@@ -577,10 +704,13 @@ function triggerNewQuiz() {
   });
 
   modal.classList.add('active');
-  playQuizPopupSound(); // 퀴즈 등장 효과음 재생
+  playQuizPopupSound();
+
+  // ★ 모달이 열리자마자 바로 음성 재생 ★
+  speakChineseTTS(currentQuiz.q);
 }
 
-// 힌트 버튼 클릭 시 실행되는 함수
+// 힌트 버튼 기능
 function showHint() {
   document.getElementById('hint-btn').style.display = 'none';
   document.getElementById('quiz-pinyin').style.display = 'block';
@@ -1072,18 +1202,9 @@ function checkGameOverCondition() {
     // 3. 바로 팝업을 띄우지 않고, 유저가 상황을 인지할 수 있도록 1.2초의 여유 시간을 준 뒤 모달 띄우기
     setTimeout(() => {
       playBGM('leaderboard');
-
-      // "배치 불가" 글씨 걷어내기
       comboEl.classList.remove('show');
-
-      const gameOverModal = document.getElementById('game-over-modal');
-      const statsText = document.getElementById('game-over-stats');
-      statsText.innerHTML = `
-                모드: <strong style="color:#ff00ff;">${gameMode.toUpperCase()}</strong><br>
-                최종 점수: <strong style="color:#00ffcc;">${score}</strong> 점<br>
-                최대 콤보: <strong style="color:#ffaf7b;">${maxComboThisRound}</strong> Combo
-            `;
-      gameOverModal.classList.add('active');
+      // ★ 게임 오버 모달 대신 복습 모달을 먼저 실행 ★
+      showReviewModal();
     }, 1200);
   }
 }
@@ -1192,4 +1313,106 @@ function playWrongSound() {
   gain.connect(audioCtx.destination);
   osc.start();
   osc.stop(audioCtx.currentTime + 0.4);
+}
+// ==========================================
+// ★ 복습 시스템 및 랭킹 전환 ★
+// ==========================================
+function showReviewModal() {
+  const reviewModal = document.getElementById('review-modal');
+  const reviewList = document.getElementById('review-list');
+  reviewList.innerHTML = '';
+
+  // 맞힌 문제가 하나도 없는 경우
+  if (correctQuizzesThisRound.length === 0) {
+    reviewList.innerHTML = `
+      <p style="color: #888; text-align: center; padding: 30px; font-size: 14pt;">
+        아쉽게도 맞힌 문제가 없습니다. 😭<br><br>다음에는 꼭 성공할 수 있어요!
+      </p>`;
+  } else {
+    // 배열에 저장된 정답들을 리스트에 예쁘게 그려줌
+    correctQuizzesThisRound.forEach((quiz) => {
+      const itemDiv = document.createElement('div');
+      itemDiv.className = 'review-item';
+      itemDiv.innerHTML = `
+        <div class="review-q">${quiz.q}</div>
+        <div class="review-pinyin">${quiz.pinyin}</div>
+        <div class="review-a">${quiz.a}</div>
+        <button class="review-tts-btn" onclick="speakChineseTTS('${quiz.q}')">🔊</button>
+      `;
+      reviewList.appendChild(itemDiv);
+    });
+  }
+
+  reviewModal.classList.add('active');
+}
+
+function goToGameOverModal() {
+  // 복습 모달 닫기
+  document.getElementById('review-modal').classList.remove('active');
+
+  // 기존 랭킹/점수 기록 팝업 열기
+  const gameOverModal = document.getElementById('game-over-modal');
+  const statsText = document.getElementById('game-over-stats');
+
+  // 맞힌 문제 개수 통계 추가
+  statsText.innerHTML = `
+    모드: <strong style="color:#ff00ff;">${gameMode.toUpperCase()}</strong><br>
+    최종 점수: <strong style="color:#00ffcc;">${score}</strong> 점<br>
+    최대 콤보: <strong style="color:#ffaf7b;">${maxComboThisRound}</strong> Combo<br>
+    학습한 문장: <strong style="color:#f6d365;">${correctQuizzesThisRound.length}</strong> 개
+  `;
+  gameOverModal.classList.add('active');
+}
+
+// ==========================================
+// ★ 로비로 돌아가기 (게임 종료) 기능 ★
+// ==========================================
+
+// 1. 확인 모달 띄우기
+function showGiveUpModal() {
+  document.getElementById('giveup-modal').classList.add('active');
+}
+
+// 2. 예/아니오 선택 결과 처리
+function processGiveUp(isYes) {
+  // 모달 닫기
+  document.getElementById('giveup-modal').classList.remove('active');
+
+  if (!isYes) return; // '아니오'를 누르면 그대로 게임 계속 진행
+
+  // '예'를 누른 경우: 게임 종료 처리
+  isDragging = false;
+  document.getElementById('drag-overlay').style.display = 'none';
+  clearShadow();
+
+  // 게임 오버 연출 (보드판 흐리게)
+  const boardWrapper = document.getElementById('board-wrapper');
+  if (boardWrapper) {
+    boardWrapper.style.transition = 'all 1s ease';
+    boardWrapper.style.filter = 'grayscale(0.6) brightness(0.5)';
+  }
+
+  // BGM을 리더보드용으로 교체하고 AI 라이벌 점수 성장 처리
+  growAIRivals(gameMode);
+  playBGM('leaderboard');
+
+  // 곧바로 복습 모달 띄우기 (종료하기 전까지 맞힌 내용만 표시됨)
+  showReviewModal();
+}
+// ==========================================
+// ★ 랭킹 등록 건너뛰기 및 로비 복귀 ★
+// ==========================================
+function skipRankingAndGoLobby() {
+  // 모달 닫기
+  document.getElementById('game-over-modal').classList.remove('active');
+
+  // 게임 화면 숨기고 로비 화면 띄우기
+  document.getElementById('game-container').style.display = 'none';
+  document.getElementById('lobby-screen').style.display = 'flex';
+
+  // 닉네임 입력칸 초기화
+  document.getElementById('nickname-input').value = '';
+
+  // 로비 BGM 재생
+  playBGM('intro');
 }
