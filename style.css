@@ -787,14 +787,16 @@ body.hell-theme .give-up-btn {
   color: #ffaa00;
 }
 /* ==========================================
-   ★ 모바일 스크롤 완벽 허용 (터치 버그 해결) ★ 
+   ★ 모바일 스크롤 완벽 허용 (터치 버그 최종 해결) ★ 
    ========================================== */
-#review-list, 
+.modal,
+.modal *,
+#ranking-screen,
+#ranking-screen *,
+#review-list,
 #review-list * {
-  touch-action: pan-y !important;
-}
-
-.ranking-list-container, 
-.ranking-list-container * {
-  touch-action: pan-y !important;
+  touch-action: auto !important;
+  user-select: auto !important;
+  -webkit-user-select: auto !important;
+  overflow-y: auto !important;
 }
