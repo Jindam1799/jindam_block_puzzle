@@ -1,3 +1,4 @@
+/* © 2026 진담중국어 (Jindam Chinese). All rights reserved. */
 /* ==========================================================
    JD CHINESE · HSK BLOCK PUZZLE  —  style.css
    - 크기(보드/블록)는 scripts.js 의 layout()이 CSS 변수로 계산해 넣습니다.
@@ -1620,4 +1621,19 @@ body.theme-hell #board-wrapper {
   font-size: 13px;
   color: var(--muted);
   margin: -4px 0 -2px;
+}
+
+/* 저작권 표시 */
+.copyright {
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--muted);
+  opacity: 0.8;
+  text-align: center;
+}
+.start-copy {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: max(16px, env(safe-area-inset-bottom));
 }

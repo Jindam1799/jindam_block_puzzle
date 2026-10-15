@@ -1,4 +1,5 @@
 <!doctype html>
+<!-- © 2026 진담중국어 (Jindam Chinese). All rights reserved. -->
 <html lang="ko">
   <head>
     <meta charset="UTF-8" />
@@ -7,6 +8,8 @@
       content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"
     />
     <title>진담중국어 · HSK 블록퍼즐</title>
+    <meta name="author" content="진담중국어" />
+    <meta name="copyright" content="© 2026 진담중국어. All rights reserved." />
     <meta name="description" content="HSK 단어 퀴즈와 블록 퍼즐을 함께 즐기는 중국어 학습 게임" />
 
     <!-- 앱 아이콘 / 홈 화면 설치 -->
@@ -101,6 +104,7 @@
       <h1 class="start-title">JD CHINESE</h1>
       <p class="start-sub">HSK BLOCK PUZZLE</p>
       <p class="blink-text">화면을 터치하거나 아무 키나 누르세요</p>
+      <p class="copyright start-copy">© 2026 진담중국어. All rights reserved.</p>
     </section>
 
     <!-- 2. 로비 -->
@@ -122,12 +126,12 @@
           </button>
           <button class="mode-card hell" onclick="openHSKModal('hell')">
             <span class="mc-name">HELL 🔥</span>
-            <span class="mc-desc">100단어씩 단계별 도전 · 방해블록 1~6개 · 점수 2배</span>
+            <span class="mc-desc">100단어씩 도전 · 방해블록 최대 6개 · 점수 2배</span>
             <span class="mc-arrow">›</span>
           </button>
           <button class="mode-card rank" onclick="openRankingFromLobby()">
             <span class="mc-name">🏆 명예의 전당</span>
-            <span class="mc-desc">단계별 랭킹 보기</span>
+            <span class="mc-desc">급수별 누적 랭킹 보기</span>
             <span class="mc-arrow">›</span>
           </button>
         </div>
@@ -137,6 +141,7 @@
           <button id="lobby-sound" class="pill" onclick="cycleSound()">🔊 소리 켬</button>
           <button id="install-btn" class="pill accent" hidden>📲 앱으로 설치</button>
         </div>
+        <p class="copyright">© 2026 진담중국어 · All rights reserved.<br />단어 데이터와 게임 디자인의 무단 복제·배포를 금합니다.</p>
         <p id="ios-install-tip" class="tiny-tip" hidden>
           아이폰/아이패드: Chrome·Safari의 공유 버튼 → <b>홈 화면에 추가</b>를 누르면 앱 아이콘이 생겨요.
         </p>
@@ -287,22 +292,6 @@
           <button class="choice-btn" onclick="selectItem('doubleScore')">
             <span class="ci">⭐</span><b>점수 x2</b><span>콤보가 끊길 때까지 2배</span>
           </button>
-        </div>
-      </div>
-    </div>
-
-    <!-- 단계 미리보기 -->
-    <div id="stage-sheet" class="modal">
-      <div class="sheet">
-        <h3 id="ss-title" class="sheet-title">1단계</h3>
-        <p id="ss-meta" class="sheet-desc"></p>
-        <p id="ss-record" class="ss-record"></p>
-        <p class="ss-label">이번 단계 단어</p>
-        <div id="ss-words" class="word-chips"></div>
-        <button class="btn primary wide" onclick="startSheetStage()">▶ 시작하기</button>
-        <div class="btn-row">
-          <button class="btn ghost" onclick="stageRanking()">🏆 랭킹</button>
-          <button class="btn ghost" onclick="closeStageSheet()">닫기</button>
         </div>
       </div>
     </div>

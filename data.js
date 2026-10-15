@@ -1,3 +1,4 @@
+/* © 2026 진담중국어 (Jindam Chinese). All rights reserved. */
 window.QUIZ_DATA = {
   hsk4: [
     // ==========================================

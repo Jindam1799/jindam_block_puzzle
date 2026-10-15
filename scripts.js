@@ -1,3 +1,4 @@
+/* © 2026 진담중국어 (Jindam Chinese). All rights reserved. */
 /* ==========================================================
    JD CHINESE · HSK BLOCK PUZZLE — scripts.js
    ----------------------------------------------------------
@@ -228,6 +229,7 @@ function playSequentialComboSounds(startCombo, linesCleared) {
 // ★ 중국어 음성 (Tingting 우선) ★
 // ==========================================
 let zhVoice = null;
+const brokenVoices = new Set(); // 소리 없이 실패한 음성은 이번 세션에서 제외
 const voiceText = (v) => `${v.name} ${v.voiceURI}`;
 const isTingting = (v) => /ting-?ting|婷婷/i.test(voiceText(v));
 const isZhCN = (v) => /^(zh[-_]CN|zh[-_]Hans|cmn)/i.test(v.lang) || /^zh$/i.test(v.lang);
@@ -244,7 +246,7 @@ const VOICE_RULES = [
 ];
 function pickChineseVoice() {
   if (!('speechSynthesis' in window)) return null;
-  const voices = speechSynthesis.getVoices();
+  const voices = speechSynthesis.getVoices().filter((v) => !brokenVoices.has(v.name));
   if (!voices.length) return null;
   for (const rule of VOICE_RULES) {
     const found = voices.find(rule);
@@ -271,30 +273,69 @@ if ('speechSynthesis' in window) {
   // 일부 브라우저는 목록을 늦게 줌
   [300, 1000, 2500].forEach((ms) => setTimeout(() => !zhVoice && pickChineseVoice(), ms));
 }
-// iOS/안드로이드: 첫 터치 때 음성 엔진 깨워두기
+// iOS: 첫 터치 때 음성 엔진 깨워두기 (데스크톱 크롬에서는 오히려 음성 대기열을 막을 수 있어 iOS만)
 function unlockSpeech() {
-  if (!('speechSynthesis' in window)) return;
+  if (!('speechSynthesis' in window) || !(window.__BROWSER || {}).isIOS) return;
   try {
     const u = new SpeechSynthesisUtterance(' ');
     u.volume = 0;
     speechSynthesis.speak(u);
   } catch (e) {}
 }
+
+// 크롬 데스크톱 대응:
+//  ① cancel() 직후 바로 speak() 하면 음성을 조용히 버리는 버그 → 말하는 중일 때만 취소하고 잠깐 쉬었다가 재생
+//  ② 'Google 普通话' 같은 온라인 음성은 가끔 소리 없이 실패 → 1.5초 안에 시작 안 하면 기기 내장 음성으로 재시도
+let currentUtterance = null; // 크롬에서 재생 중 객체가 사라지지 않게 붙잡아 둠
+function localChineseVoice() {
+  const voices = speechSynthesis.getVoices().filter((v) => v.localService && !brokenVoices.has(v.name));
+  for (const rule of VOICE_RULES) {
+    const v = voices.find(rule);
+    if (v) return v;
+  }
+  return null;
+}
+function speakNow(text, voice, isRetry) {
+  const u = new SpeechSynthesisUtterance(text);
+  u.lang = voice ? voice.lang : 'zh-CN';
+  if (voice) u.voice = voice;
+  u.rate = 0.85;
+  u.volume = 1;
+  let started = false;
+  u.onstart = () => (started = true);
+  u.onend = () => setTimeout(resumeBGM, 200); // 음성 뒤 BGM 복구
+  u.onerror = (e) => {
+    setTimeout(resumeBGM, 200);
+    if (!started && !isRetry && e.error !== 'interrupted' && e.error !== 'canceled') fallback();
+  };
+  const fallback = () => {
+    if (started || currentUtterance !== u || isRetry) return;
+    if (voice) brokenVoices.add(voice.name);
+    const local = localChineseVoice();
+    if (local && (!voice || local.name !== voice.name)) {
+      zhVoice = local;
+      updateVoiceChip();
+    }
+    speechSynthesis.cancel();
+    setTimeout(() => speakNow(text, local, true), 120);
+  };
+  currentUtterance = u;
+  speechSynthesis.resume();
+  speechSynthesis.speak(u);
+  if (voice && !voice.localService) setTimeout(fallback, 1500);
+}
 function speakChinese(text) {
   if (!sfxOn() || !('speechSynthesis' in window)) return;
-  const clean = String(text).replace(/<[^>]*>/g, '');
-  setTimeout(() => {
+  const clean = String(text).replace(/<[^>]*>/g, '').trim();
+  if (!clean) return;
+  if (!zhVoice || brokenVoices.has(zhVoice.name)) pickChineseVoice();
+  const voice = zhVoice && !brokenVoices.has(zhVoice.name) ? zhVoice : localChineseVoice();
+  if (speechSynthesis.speaking || speechSynthesis.pending) {
     speechSynthesis.cancel();
-    if (!zhVoice) pickChineseVoice();
-    const u = new SpeechSynthesisUtterance(clean);
-    u.lang = zhVoice ? zhVoice.lang : 'zh-CN';
-    if (zhVoice) u.voice = zhVoice;
-    u.rate = 0.85;
-    u.volume = 1;
-    u.onend = u.onerror = () => setTimeout(resumeBGM, 200); // 음성 뒤 BGM 복구
-    speechSynthesis.resume();
-    speechSynthesis.speak(u);
-  }, 40);
+    setTimeout(() => speakNow(clean, voice, false), 150);
+  } else {
+    speakNow(clean, voice, false);
+  }
 }
 $('voice-chip').addEventListener('click', () => {
   ensureAudio();
@@ -459,36 +500,8 @@ $('stage-grid').addEventListener('click', (e) => {
     toast(`${s - 1}단계를 먼저 클리어해야 해요 🔒`);
     return;
   }
-  openStageSheet(s);
+  startGame(gameMode, gameLevel, s); // 바로 시작
 });
-
-// 단계 미리보기 (단어 목록 + 기록)
-let sheetStage = 1;
-function openStageSheet(stage) {
-  sheetStage = stage;
-  const words = stageWords(gameMode, gameLevel, stage);
-  const rec = stageRecord(gameMode, gameLevel, stage);
-  $('ss-title').textContent = `${stage}단계`;
-  $('ss-meta').textContent = `${levelLabel(gameLevel)}급 · ${words.length}단어`;
-  $('ss-record').innerHTML = rec
-    ? `<span class="ss-stars">${starText(rec.stars)}</span> 최고 <b>${rec.best.toLocaleString()}</b>점`
-    : '아직 클리어 전이에요';
-  $('ss-words').innerHTML = words
-    .map((w) => `<span class="word-chip" title="${escapeHTML(w.pinyin || '')}">${w.q}</span>`)
-    .join('');
-  $('stage-sheet').classList.add('active');
-}
-function closeStageSheet() {
-  $('stage-sheet').classList.remove('active');
-}
-function startSheetStage() {
-  closeStageSheet();
-  startGame(gameMode, gameLevel, sheetStage);
-}
-function stageRanking() {
-  closeStageSheet();
-  showRankingScreen(gameMode, gameLevel, 'stage');
-}
 
 // ==========================================
 // ★ 랭킹 (모드·급수별 누적: 클리어한 단계들의 최고점 합계) ★
@@ -1738,7 +1751,6 @@ window.addEventListener('keydown', (e) => {
     if (isBombActive) cancelBomb();
     else if ($('exit-modal').classList.contains('active')) closeExitConfirm();
     else if ($('hsk-modal').classList.contains('active')) closeHSKModal();
-    else if ($('stage-sheet').classList.contains('active')) closeStageSheet();
   }
 });
 
