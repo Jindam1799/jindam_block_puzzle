@@ -1637,3 +1637,99 @@ body.theme-hell #board-wrapper {
   right: 0;
   bottom: max(16px, env(safe-area-inset-bottom));
 }
+
+/* ==========================================================
+   ★ 피버 타임 / 스피드 보너스 ★
+   ========================================================== */
+.quiz-timer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 auto 10px;
+  max-width: 260px;
+}
+.qt-label {
+  font-size: 12px;
+  font-weight: 900;
+  color: var(--gold);
+  white-space: nowrap;
+}
+.qt-track {
+  flex: 1;
+  height: 6px;
+  border-radius: 99px;
+  background: rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+}
+#quiz-timer-bar {
+  height: 100%;
+  background: linear-gradient(90deg, #ffe066, #ff9a1f);
+  transform-origin: left;
+  will-change: transform;
+}
+.quiz-timer.done {
+  opacity: 0.4;
+}
+.float-text.fever {
+  font-size: clamp(26px, 6.5vmin, 48px);
+  text-shadow: 0 0 18px #ff7a3d, 0 4px 0 #7a2a00;
+}
+.float-text.speed {
+  top: 76%;
+  font-size: clamp(22px, 5.5vmin, 36px);
+  color: #ffe066;
+  text-shadow: 0 3px 0 #7a4b00, 0 0 14px rgba(255, 200, 0, 0.6);
+}
+
+/* 피버: 대기/드래그 블록 무지개 + 보드 테두리 (무한 애니메이션 없이 정적으로 → 가벼움) */
+body.fever-on .preview-cell.color-1,
+body.fever-on .preview-cell.color-2,
+body.fever-on .preview-cell.color-3,
+body.fever-on .drag-cell.color-1,
+body.fever-on .drag-cell.color-2,
+body.fever-on .drag-cell.color-3 {
+  background: linear-gradient(135deg, #ff5f6d, #ffc371 30%, #47e891 55%, #3fc5ff 78%, #b06bff);
+}
+#board-wrapper.fever {
+  border-color: #ffb347;
+  box-shadow: 0 0 0 3px #ff7a3d, 0 0 28px rgba(255, 120, 60, 0.65);
+}
+#block-dock {
+  transition: box-shadow 0.3s;
+}
+body.fever-on #block-dock {
+  box-shadow: 0 0 0 2px #ffb347 inset;
+}
+.chip.combo.fever {
+  color: #2a0d00;
+  background: linear-gradient(90deg, #ff7a3d, #ffd24a);
+  border-color: transparent;
+}
+
+/* 세로 화면 HUD: 1줄 = 버튼·점수, 2줄 = 단계·단어·콤보 (큰 점수도 겹치지 않게) */
+#game-container[data-layout='portrait'] .hud {
+  grid-template-columns: 44px 1fr 44px;
+  grid-template-areas: 'home score sound' 'meta meta meta';
+  row-gap: 6px;
+  padding-bottom: 10px;
+}
+#game-container[data-layout='portrait'] .hud-score {
+  align-items: center;
+}
+#game-container[data-layout='portrait'] .hud-meta {
+  flex-direction: row;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+.item-btn .ib-name {
+  white-space: nowrap;
+}
+@media (max-width: 380px) {
+  .item-btn {
+    font-size: 13px;
+    gap: 4px;
+  }
+  .item-btn .ib-icon {
+    font-size: 16px;
+  }
+}

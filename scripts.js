@@ -717,6 +717,21 @@ let currentQuiz = null;
 let quizPool = []; // 이번 단계에서 아직 못 맞힌 단어 (뒤에서부터 출제)
 let stageList = []; // 이번 단계 단어 전체
 let correctCount = 0;
+// ★ 피버 타임 / 스피드 보너스 ★
+const FEVER_STREAK = 3; // 연속 정답 몇 번이면 피버
+const FEVER_BLOCKS = 3; // 피버가 이어지는 블록 수
+const SPEED_LIMIT_MS = 3000; // 이 시간 안에 맞히면 스피드 보너스
+let quizStreak = 0;
+let feverLeft = 0;
+let quizShownAt = 0;
+const feverOn = () => feverLeft > 0;
+const scoreMult = () => (feverOn() ? 2 : 1);
+function setFever(n) {
+  feverLeft = n;
+  document.body.classList.toggle('fever-on', n > 0);
+  boardWrap.classList.toggle('fever', n > 0);
+  updateHUD();
+}
 let wrongCount = 0;
 let gameSession = 0; // 게임마다 증가 → 이전 판의 예약 작업이 새 판을 건드리지 않게
 
@@ -903,6 +918,8 @@ function startGame(mode, level, stage = 1) {
   quizPool = shuffle([...stageList]);
   correctCount = 0;
   wrongCount = 0;
+  quizStreak = 0;
+  setFever(0);
 
   boardWrap.classList.remove('dimmed', 'double-on');
   hideBoardBanner();
@@ -982,8 +999,11 @@ function updateHUD() {
   $('word-chip').textContent = `단어 ${correctCount}/${stageList.length}`;
   $('stage-progress').style.transform = `scaleX(${correctCount / total})`;
   const chip = $('combo-chip');
-  chip.textContent = `COMBO ${currentCombo}${isDoubleScoreActive ? ' · x2' : ''}`;
-  chip.classList.toggle('on', currentCombo > 0);
+  chip.textContent = feverOn()
+    ? `🔥 FEVER ×2 · ${feverLeft}`
+    : `COMBO ${currentCombo}${isDoubleScoreActive ? ' · x2' : ''}`;
+  chip.classList.toggle('on', currentCombo > 0 && !feverOn());
+  chip.classList.toggle('fever', feverOn());
 }
 
 // ==========================================
@@ -1216,6 +1236,7 @@ function onPointerUp(e) {
 }
 
 function afterPlacement() {
+  if (feverOn()) setFever(feverLeft - 1);
   if (currentDockBlocks.every((b) => b === null)) {
     if (linesClearedThisRound === 0) {
       currentCombo = 0;
@@ -1302,7 +1323,7 @@ function placeBlock(startR, startC, matrix, colorVal) {
     for (let c = 0; c < matrix[r].length; c++) {
       if (matrix[r][c] === 1) {
         board[startR + r][startC + c] = colorVal;
-        score += 10;
+        score += 10 * scoreMult();
       }
     }
   }
@@ -1355,6 +1376,7 @@ function clearFullLines(onComplete) {
 
   let earned = total * (gameMode === 'hell' ? 300 : 150) * currentCombo;
   if (isDoubleScoreActive) earned *= 2;
+  earned *= scoreMult(); // 피버 2배
   score += earned;
 
   const allClear = board.every((row) => row.every((v) => v === 0));
@@ -1594,7 +1616,11 @@ function triggerNewQuiz() {
     ? quizPool.pop()
     : { q: '데이터 없음', pinyin: '-', a: '확인', options: ['확인', '준비중', '테스트'] };
 
-  $('quiz-tag').textContent = `관문을 통과하라! · 남은 단어 ${stageList.length - correctCount}개`;
+  const need = FEVER_STREAK - quizStreak;
+  $('quiz-tag').textContent =
+    quizStreak > 0
+      ? `🔥 연속 정답 ${quizStreak} · ${need}개 더 맞히면 피버!`
+      : `관문을 통과하라! · 남은 단어 ${stageList.length - correctCount}개`;
   $('quiz-tag').className = 'quiz-tag';
   setQuizWord(currentQuiz.q);
   $('quiz-pinyin').textContent = currentQuiz.pinyin;
@@ -1615,6 +1641,30 @@ function triggerNewQuiz() {
 
   $('quiz-modal').classList.add('active');
   playQuizPopupSound();
+  startQuizTimer();
+}
+
+// 3초 타이머 막대 (transform 전환만 사용 → 가벼움)
+function startQuizTimer() {
+  const wrap = $('quiz-timer');
+  const bar = $('quiz-timer-bar');
+  wrap.hidden = false;
+  wrap.classList.remove('done');
+  bar.style.transition = 'none';
+  bar.style.transform = 'scaleX(1)';
+  requestAnimationFrame(() =>
+    requestAnimationFrame(() => {
+      quizShownAt = performance.now();
+      bar.style.transition = `transform ${SPEED_LIMIT_MS}ms linear`;
+      bar.style.transform = 'scaleX(0)';
+    }),
+  );
+}
+function stopQuizTimer() {
+  const bar = $('quiz-timer-bar');
+  bar.style.transform = getComputedStyle(bar).transform;
+  bar.style.transition = 'none';
+  $('quiz-timer').classList.add('done');
 }
 
 function answerQuiz(btn, opt) {
@@ -1624,10 +1674,23 @@ function answerQuiz(btn, opt) {
   const correct = opt === quiz.a;
   const rightBtn = buttons.find((b) => b.dataset.value === quiz.a);
   if (rightBtn) rightBtn.classList.add('correct');
+  const elapsed = performance.now() - quizShownAt;
+  stopQuizTimer();
 
   if (correct) {
     playCorrectSound();
     correctCount++;
+    // ⚡ 스피드 보너스
+    if (quizShownAt && elapsed <= SPEED_LIMIT_MS) {
+      const bonus = gameMode === 'hell' ? 600 : 300;
+      score += bonus;
+      floatText(`⚡ 스피드 보너스 +${bonus}`, 'speed', 1600);
+      playBonusSpawnSound();
+    }
+    // 🔥 연속 정답 → 피버
+    quizStreak++;
+    const startFever = quizStreak >= FEVER_STREAK;
+    if (startFever) quizStreak = 0;
     updateHUD();
     const cleared = correctCount >= stageList.length;
     later(() => {
@@ -1638,6 +1701,11 @@ function answerQuiz(btn, opt) {
       quizOpen = false;
       if (isGameOver) return;
       if (cleared) return stageClear();
+      if (startFever) {
+        setFever(FEVER_BLOCKS);
+        floatText('🔥 FEVER TIME!', 'buff fever', 1600);
+        playBuffSound();
+      }
       generateDockBlocks();
       isGameLocked = false;
     }, 2000);
@@ -1645,6 +1713,7 @@ function answerQuiz(btn, opt) {
     btn.classList.add('wrong');
     playWrongSound();
     wrongCount++;
+    quizStreak = 0;
     // 틀린 단어는 이번 단계 안에서 다시 출제 (바로 다음은 아니게)
     quizPool.splice(Math.floor(Math.random() * Math.max(1, quizPool.length)), 0, quiz);
     score = Math.max(0, score - 500);
@@ -1685,6 +1754,7 @@ function triggerBonusQuiz() {
   $('hint-btn').hidden = true;
   $('quiz-pinyin').hidden = true;
   $('quiz-feedback').textContent = '';
+  $('quiz-timer').hidden = true;
 
   const box = $('quiz-options');
   box.innerHTML = '';
