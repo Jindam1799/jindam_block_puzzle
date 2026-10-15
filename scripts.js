@@ -101,7 +101,7 @@ const BGM_LIST = {
 };
 const bgmEl = new Audio();
 bgmEl.preload = 'auto';
-bgmEl.volume = 0.17;
+bgmEl.volume = 0.2; // 음악 파일 크기를 고르게 맞춘 뒤 기준 볼륨
 let bgmType = null;
 let bgmIndex = 0;
 let audioUnlocked = false;
