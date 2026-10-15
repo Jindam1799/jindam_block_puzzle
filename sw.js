@@ -1,7 +1,7 @@
 /* © 2026 진담중국어 (Jindam Chinese). All rights reserved. */
 // 오프라인 캐시: 게임 코드는 "네트워크 우선"(수정하면 바로 반영), 아이콘은 캐시 우선.
 // mp3 는 브라우저가 부분 요청(Range)으로 받기 때문에 가로채지 않습니다.
-const CACHE = 'hsk-block-v7';
+const CACHE = 'hsk-block-v8';
 const CORE = [
   './',
   './index.html',

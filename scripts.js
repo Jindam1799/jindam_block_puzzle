@@ -1384,7 +1384,7 @@ function clearFullLines(onComplete) {
 
   // 2) 연출
   shakeBoard(Math.min(1 + currentCombo * 0.5, 6));
-  if (currentCombo >= 10) flashScreen('#ffffff', 0.85);
+  if (currentCombo >= 10) flashScreen('#ffffff', 0.18);
   showComboEffect(total, currentCombo);
   playSequentialComboSounds(prevCombo + 1, total);
   if (allClear) showAllClearEffect();
@@ -1446,7 +1446,7 @@ function showComboEffect(lines, combo) {
 }
 function showAllClearEffect() {
   popText($('all-clear-display'), 2000);
-  flashScreen('#fff3b0', 0.9);
+  flashScreen('#fff3b0', 0.22);
 }
 function floatText(text, cls, ms) {
   const el = document.createElement('div');
@@ -1522,7 +1522,7 @@ function stageClear() {
   const { isBest, firstClear } = saveStageClear(gameMode, gameLevel, currentStage, stars, score);
   nudgeRivals(gameMode, gameLevel);
   playBGM('leaderboard');
-  flashScreen('#fff3b0', 0.7);
+  flashScreen('#fff3b0', 0.2);
 
   $('clear-title').textContent = `${currentStage}단계 클리어!`;
   $('clear-stars').innerHTML = [1, 2, 3].map((i) => `<span class="${i <= stars ? 'on' : ''}">★</span>`).join('');
@@ -1929,7 +1929,7 @@ function detonateBomb(r, c) {
 
   playBombSound();
   shakeBoard(6);
-  flashScreen('#ff4500', 0.6);
+  flashScreen('#ff4500', 0.22);
 
   let destroyed = 0;
   for (let i = r - 1; i <= r + 1; i++) {
