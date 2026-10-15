@@ -1,5 +1,5 @@
 {
-  "name": "JD CHINESE · HSK 블록퍼즐",
+  "name": "진담중국어 · HSK 블록퍼즐",
   "short_name": "HSK블록",
   "description": "HSK 단어 퀴즈와 블록 퍼즐을 함께 즐기는 중국어 학습 게임",
   "lang": "ko",
@@ -10,9 +10,21 @@
   "background_color": "#0f0b2e",
   "theme_color": "#0f0b2e",
   "icons": [
-    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
-    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
-    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
-    { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml" }
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "icons/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
   ]
 }

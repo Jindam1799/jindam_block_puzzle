@@ -289,16 +289,249 @@ $('start-screen').addEventListener('click', initStartScreen);
 document.addEventListener('keydown', initStartScreen);
 
 // ==========================================
-// ★ 랭킹 (로컬스토리지, 기존 저장 키 그대로 사용) ★
+// ★ 스테이지 (노말 25단어 / 헬 100단어씩) ★
+// ==========================================
+const STAGE_SIZE = { normal: 25, hell: 100 };
+const PROGRESS_KEY = 'hskblock_progress_v1';
+let pendingGameMode = 'normal';
+let gameLevel = 'hsk4';
+let currentStage = 1;
+
+const levelWords = (level) => (window.QUIZ_DATA && window.QUIZ_DATA[level]) || [];
+const stageCount = (mode, level) => Math.ceil(levelWords(level).length / STAGE_SIZE[mode]);
+function stageWords(mode, level, stage) {
+  const size = STAGE_SIZE[mode];
+  return levelWords(level).slice((stage - 1) * size, stage * size);
+}
+const levelLabel = (level) => level.replace('hsk', 'HSK ');
+const modeLabel = (mode) => (mode === 'hell' ? 'HELL 🔥' : 'NORMAL');
+
+// 진행 기록: { normal: { hsk4: { "1": { stars, best }, ... }, last: 3 }, hell: {...} }
+function loadProgress() {
+  return store.get(PROGRESS_KEY, { normal: {}, hell: {} });
+}
+function levelProgress(mode, level) {
+  const p = loadProgress();
+  return (p[mode] && p[mode][level]) || {};
+}
+function stageRecord(mode, level, stage) {
+  return levelProgress(mode, level)[stage] || null;
+}
+function isUnlocked(mode, level, stage) {
+  return stage === 1 || !!stageRecord(mode, level, stage - 1);
+}
+function clearedCount(mode, level) {
+  return Object.keys(levelProgress(mode, level)).filter((k) => /^\d+$/.test(k)).length;
+}
+function saveStageClear(mode, level, stage, stars, gained) {
+  const p = loadProgress();
+  p[mode] = p[mode] || {};
+  const lv = (p[mode][level] = p[mode][level] || {});
+  const prev = lv[stage] || { stars: 0, best: 0 };
+  const isBest = gained > prev.best;
+  lv[stage] = { stars: Math.max(prev.stars, stars), best: Math.max(prev.best, gained) };
+  store.set(PROGRESS_KEY, p);
+  return { isBest, firstClear: !prev.best && !prev.stars };
+}
+function setLastStage(mode, level, stage) {
+  const p = loadProgress();
+  p[mode] = p[mode] || {};
+  const lv = (p[mode][level] = p[mode][level] || {});
+  lv.last = stage;
+  store.set(PROGRESS_KEY, p);
+}
+function getBestScore(mode, level, stage = currentStage) {
+  const rec = stageRecord(mode, level, stage);
+  return rec ? rec.best : 0;
+}
+function starsFor(mode, wrong) {
+  const [three, two] = mode === 'hell' ? [2, 8] : [0, 2];
+  return wrong <= three ? 3 : wrong <= two ? 2 : 1;
+}
+const starText = (n) => '★'.repeat(n) + '☆'.repeat(3 - n);
+
+// ---------- 급수 선택 ----------
+function openHSKModal(mode) {
+  pendingGameMode = mode;
+  const title = $('hsk-modal-title');
+  title.textContent = `${modeLabel(mode)} · 급수 선택`;
+  title.style.color = mode === 'hell' ? '#ff8a9e' : '#7ff5e3';
+  ['hsk4', 'hsk5', 'hsk6'].forEach((l) => {
+    const el = $(`cnt-${l}`);
+    if (!el) return;
+    const total = stageCount(mode, l);
+    el.textContent = `${clearedCount(mode, l)} / ${total}단계`;
+  });
+  $('hsk-modal').classList.add('active');
+}
+function closeHSKModal() {
+  $('hsk-modal').classList.remove('active');
+}
+function selectHSK(level) {
+  closeHSKModal();
+  showStageScreen(pendingGameMode, level);
+}
+
+// ---------- 스테이지 선택 화면 ----------
+function showStageScreen(mode = gameMode, level = gameLevel) {
+  gameMode = mode;
+  gameLevel = level;
+  document.body.className = `theme-${mode} theme-${level}`;
+  document.querySelectorAll('.float-text, .giant-hanzi-overlay').forEach((el) => el.remove());
+  showScreen('stage-screen');
+  playBGM('intro');
+  renderStageGrid();
+}
+function renderStageGrid() {
+  const mode = gameMode;
+  const level = gameLevel;
+  const total = stageCount(mode, level);
+  const prog = levelProgress(mode, level);
+  const cleared = clearedCount(mode, level);
+  let stars = 0;
+  for (let s = 1; s <= total; s++) if (prog[s]) stars += prog[s].stars;
+
+  $('stage-title').textContent = `${modeLabel(mode)} · ${levelLabel(level)}급`;
+  $('stage-sub').textContent = `단계마다 ${STAGE_SIZE[mode]}단어를 모두 맞히면 클리어!`;
+  $('stage-cleared').textContent = `${cleared} / ${total}`;
+  $('stage-stars').textContent = `${stars} / ${total * 3}`;
+  $('stage-bar').style.width = `${total ? (cleared / total) * 100 : 0}%`;
+
+  const next = Math.min(total, cleared + 1);
+  const grid = $('stage-grid');
+  let html = '';
+  for (let s = 1; s <= total; s++) {
+    const rec = prog[s];
+    const open = isUnlocked(mode, level, s);
+    const cls = rec ? 'cleared' : open ? 'open' : 'locked';
+    const now = !rec && open ? ' now' : '';
+    const inner = rec
+      ? `<span class="st-stars">${starText(rec.stars)}</span>`
+      : open
+        ? '<span class="st-go">도전!</span>'
+        : '<span class="st-lock">🔒</span>';
+    html += `<button class="stage-tile ${cls}${now}" data-stage="${s}"><b>${s}</b>${inner}</button>`;
+  }
+  grid.innerHTML = html;
+  // 지금 도전할 단계가 보이도록 스크롤
+  const target = grid.querySelector(`[data-stage="${prog.last && isUnlocked(mode, level, prog.last) ? prog.last : next}"]`);
+  if (target) requestAnimationFrame(() => target.scrollIntoView({ block: 'center' }));
+}
+$('stage-grid').addEventListener('click', (e) => {
+  const tile = e.target.closest('.stage-tile');
+  if (!tile) return;
+  const s = Number(tile.dataset.stage);
+  if (!isUnlocked(gameMode, gameLevel, s)) {
+    toast(`${s - 1}단계를 먼저 클리어해야 해요 🔒`);
+    return;
+  }
+  openStageSheet(s);
+});
+
+// 단계 미리보기 (단어 목록 + 기록)
+let sheetStage = 1;
+function openStageSheet(stage) {
+  sheetStage = stage;
+  const words = stageWords(gameMode, gameLevel, stage);
+  const rec = stageRecord(gameMode, gameLevel, stage);
+  $('ss-title').textContent = `${stage}단계`;
+  $('ss-meta').textContent = `${levelLabel(gameLevel)}급 · ${words.length}단어`;
+  $('ss-record').innerHTML = rec
+    ? `<span class="ss-stars">${starText(rec.stars)}</span> 최고 <b>${rec.best.toLocaleString()}</b>점`
+    : '아직 클리어 전이에요';
+  $('ss-words').innerHTML = words
+    .map((w) => `<span class="word-chip" title="${escapeHTML(w.pinyin || '')}">${w.q}</span>`)
+    .join('');
+  $('stage-sheet').classList.add('active');
+}
+function closeStageSheet() {
+  $('stage-sheet').classList.remove('active');
+}
+function startSheetStage() {
+  closeStageSheet();
+  startGame(gameMode, gameLevel, sheetStage);
+}
+function stageRanking() {
+  closeStageSheet();
+  showRankingScreen(gameMode, gameLevel, sheetStage);
+}
+
+// ==========================================
+// ★ 랭킹 (단계별) ★
 // ==========================================
 let currentRankMode = 'normal';
 let currentRankLevel = 'hsk4';
+let currentRankStage = 1;
 let lastSavedId = null; // 방금 등록한 기록만 강조
+let rankBackTo = 'lobby';
 
-const rankKey = (mode, level) => `player_rankings_${mode}_${level}`;
-function getBestScore(mode, level) {
-  const list = store.get(rankKey(mode, level), []);
-  return list.length ? list[0].score : 0;
+const rankKey = (mode, level, stage) => `hskblock_rank_${mode}_${level}_s${stage}`;
+const rivalKey = (mode, level, stage) => `hskblock_rival_${mode}_${level}_s${stage}`;
+
+// 라이벌 기록 (단계마다 이름·점수가 다르게, 한 번 정해지면 고정)
+const RIVAL_NAMES = [
+  '하늘별', '민준', '서윤', '판다곰', '만두왕', '탕후루', '지호', '하은', '도윤', '열공러',
+  '샤오룽', '니하오', '수아', '공부벌레', '예준', '은우', '지아', '월병', '용용이', '훠궈',
+  '별빛', '라온', '시우', '마라탕', '하람', '찐빵', '다온', '유나', '우주', '서준',
+];
+function seededRandom(seedText) {
+  let h = 2166136261;
+  for (const ch of seedText) h = Math.imul(h ^ ch.charCodeAt(0), 16777619);
+  return () => {
+    h += 0x6d2b79f5;
+    let t = h;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+function getRivals(mode, level, stage) {
+  const key = rivalKey(mode, level, stage);
+  let rivals = store.get(key, null);
+  if (!rivals) {
+    const rnd = seededRandom(key);
+    const words = stageWords(mode, level, stage).length || STAGE_SIZE[mode];
+    // 실제 플레이 시뮬레이션 기준: 노말 25단어 ≈ 3만~5만점, 헬 100단어 ≈ 25만~40만점
+    const perWord = mode === 'hell' ? 3300 : 1650;
+    const base = perWord * words * (1 + Math.min(stage, 60) * 0.004);
+    const names = shuffleSeeded([...RIVAL_NAMES], rnd).slice(0, 3);
+    const day = new Date();
+    rivals = [1.0, 0.8, 0.62].map((f, i) => {
+      const d = new Date(day.getTime() - Math.floor(rnd() * 20 + i) * 86400000);
+      return {
+        name: names[i],
+        score: Math.round((base * f * (0.9 + rnd() * 0.2)) / 10) * 10,
+        combo: Math.max(3, Math.round((mode === 'hell' ? 30 : 14) * f * (0.8 + rnd() * 0.4))),
+        date: d.toLocaleDateString(),
+      };
+    });
+    store.set(key, rivals);
+  }
+  return rivals.map((r) => ({ ...r, isPlayer: false }));
+}
+function shuffleSeeded(arr, rnd) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(rnd() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+// 학생이 라이벌을 앞지르면 가끔 라이벌도 기록을 올림 (경쟁감 유지)
+function growRivals(mode, level, stage, playerScore) {
+  const key = rivalKey(mode, level, stage);
+  const rivals = store.get(key, null);
+  if (!rivals) return;
+  rivals.forEach((r, i) => {
+    if (r.score < playerScore && Math.random() < (i === 0 ? 0.35 : 0.2)) {
+      r.score = Math.round((playerScore * (1.02 + Math.random() * 0.1)) / 10) * 10;
+      r.date = new Date().toLocaleDateString();
+    }
+  });
+  store.set(key, rivals);
+}
+function rankingRows(mode, level, stage) {
+  const players = store.get(rankKey(mode, level, stage), []);
+  return [...players, ...getRivals(mode, level, stage)].sort((a, b) => b.score - a.score).slice(0, 15);
 }
 
 function saveRanking() {
@@ -310,8 +543,8 @@ function saveRanking() {
     return;
   }
   store.set('hskblock_last_nick', nickname);
-  const key = rankKey(gameMode, gameLevel);
-  let list = store.get(key, []);
+  const key = rankKey(gameMode, gameLevel, currentStage);
+  const list = store.get(key, []);
   lastSavedId = Date.now();
   list.push({
     id: lastSavedId,
@@ -322,82 +555,56 @@ function saveRanking() {
     isPlayer: true,
   });
   list.sort((a, b) => b.score - a.score);
-  store.set(key, list.slice(0, 50));
-  $('game-over-modal').classList.remove('active');
-  showRankingScreen(gameMode, gameLevel);
+  store.set(key, list.slice(0, 30));
+  const rank = rankingRows(gameMode, gameLevel, currentStage).findIndex((r) => r.id === lastSavedId) + 1;
+  growRivals(gameMode, gameLevel, currentStage, score);
+  $('rank-form').hidden = true;
+  $('rank-done').hidden = false;
+  $('rank-done-text').textContent = rank > 0 ? `🏆 ${currentStage}단계 랭킹 ${rank}위로 등록했어요!` : '랭킹에 등록했어요!';
 }
 
-function showRankingScreen(mode = 'normal', level = 'hsk4') {
+function showRankingScreen(mode = 'normal', level = 'hsk4', stage = 1, backTo) {
+  rankBackTo = backTo || ($('stage-screen').classList.contains('active') ? 'stage' : 'lobby');
+  document.querySelectorAll('.modal.active').forEach((m) => m.classList.remove('active'));
   showScreen('ranking-screen');
   document.body.className = '';
   playBGM('leaderboard');
   currentRankMode = mode;
   currentRankLevel = level;
+  currentRankStage = stage;
   renderRankingList();
+}
+function openRankingFromLobby() {
+  const p = levelProgress('normal', 'hsk4');
+  showRankingScreen('normal', 'hsk4', p.last || 1, 'lobby');
 }
 function changeRankMode(mode) {
   currentRankMode = mode;
+  currentRankStage = levelProgress(mode, currentRankLevel).last || 1;
   renderRankingList();
 }
 function changeRankLevel(level) {
   currentRankLevel = level;
+  currentRankStage = levelProgress(currentRankMode, level).last || 1;
   renderRankingList();
 }
-
-const AI_RIVALS = {
-  normal: [
-    { name: '제갈공명', baseScore: 85000, combo: 24, isPlayer: false },
-    { name: '이소룡', baseScore: 72000, combo: 18, isPlayer: false },
-  ],
-  hell: [
-    { name: '사마의', baseScore: 250000, combo: 35, isPlayer: false },
-    { name: '진시황', baseScore: 210000, combo: 28, isPlayer: false },
-  ],
-};
-function growAIRivals(mode, level) {
-  const key = `ai_rivals_${mode}_${level}`;
-  let rivals = store.get(key, null);
-  if (!rivals) {
-    rivals = AI_RIVALS[mode].map((r) => ({ ...r, currentScore: r.baseScore, date: new Date().toLocaleDateString() }));
-  } else {
-    const playerBest = getBestScore(mode, level);
-    rivals.forEach((r, i) => {
-      const ahead = r.currentScore > playerBest;
-      const chance = i === 0 ? (ahead ? 0.1 : 0.4) : ahead ? 0.15 : 0.3;
-      const inc = i === 0 ? (Math.floor(Math.random() * 500) + 250) * 10 : (Math.floor(Math.random() * 300) + 150) * 10;
-      if (Math.random() < chance) {
-        r.currentScore += inc;
-        r.date = new Date().toLocaleDateString();
-        if (Math.random() < 0.05) r.combo += 1;
-      }
-    });
-  }
-  store.set(key, rivals);
-}
-function getAIRivals(mode, level) {
-  const key = `ai_rivals_${mode}_${level}`;
-  let rivals = store.get(key, null);
-  if (!rivals) {
-    rivals = AI_RIVALS[mode].map((r) => ({ ...r, currentScore: r.baseScore, date: new Date().toLocaleDateString() }));
-    store.set(key, rivals);
-  } else if (rivals.some((r) => !r.date)) {
-    // 예전 버전에서 저장된 기록에도 날짜를 채워 다른 기록과 똑같이 보이게
-    rivals.forEach((r) => (r.date = r.date || new Date().toLocaleDateString()));
-    store.set(key, rivals);
-  }
-  return rivals.map((r) => ({ name: r.name, score: r.currentScore, combo: r.combo, date: r.date || '', isPlayer: false }));
+function changeRankStage(delta) {
+  const total = stageCount(currentRankMode, currentRankLevel);
+  currentRankStage = clamp(currentRankStage + delta, 1, total);
+  renderRankingList();
 }
 
 function renderRankingList() {
   $('tab-normal').classList.toggle('active', currentRankMode === 'normal');
   $('tab-hell').classList.toggle('active', currentRankMode === 'hell');
   ['hsk4', 'hsk5', 'hsk6'].forEach((l) => $(`tab-rank-${l}`).classList.toggle('active', currentRankLevel === l));
+  const total = stageCount(currentRankMode, currentRankLevel);
+  currentRankStage = clamp(currentRankStage, 1, Math.max(1, total));
+  $('rank-stage-label').textContent = `${currentRankStage}단계`;
+  $('rank-prev').disabled = currentRankStage <= 1;
+  $('rank-next').disabled = currentRankStage >= total;
 
-  const players = store.get(rankKey(currentRankMode, currentRankLevel), []);
-  const all = [...players, ...getAIRivals(currentRankMode, currentRankLevel)]
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 15);
-
+  const all = rankingRows(currentRankMode, currentRankLevel, currentRankStage);
   const listEl = $('ranking-list');
   if (!all.length) {
     listEl.innerHTML = '<li class="rk-empty">등록된 랭킹이 없습니다.</li>';
@@ -407,14 +614,18 @@ function renderRankingList() {
     .map((r, i) => {
       const cls = ['ranking-item', i < 3 ? `top${i + 1}` : '', lastSavedId && r.id === lastSavedId ? 'me' : ''].join(' ');
       const medal = ['🥇', '🥈', '🥉'][i] || i + 1;
-      const sub = r.date || '';
       return `<li class="${cls}">
         <span class="rk-no">${medal}</span>
-        <span class="rk-name">${escapeHTML(r.name)}<small>${escapeHTML(sub)}</small></span>
+        <span class="rk-name">${escapeHTML(r.name)}<small>${escapeHTML(r.date || '')}</small></span>
         <span class="rk-score">${Number(r.score).toLocaleString()}<small>MAX ${r.combo} COMBO</small></span>
       </li>`;
     })
     .join('');
+}
+
+function closeRanking() {
+  if (rankBackTo === 'stage') showStageScreen(gameMode, gameLevel);
+  else returnToLobby();
 }
 
 function returnToLobby() {
@@ -423,35 +634,6 @@ function returnToLobby() {
   showScreen('lobby-screen');
   playBGM('intro');
 }
-
-// ==========================================
-// ★ 급수 선택 ★
-// ==========================================
-let pendingGameMode = 'normal';
-let gameLevel = 'hsk4';
-
-function openHSKModal(mode) {
-  pendingGameMode = mode;
-  const title = $('hsk-modal-title');
-  title.textContent = mode === 'hell' ? 'HELL 🔥 · 급수 선택' : 'NORMAL · 급수 선택';
-  title.style.color = mode === 'hell' ? '#ff8a9e' : '#7ff5e3';
-  $('hsk-modal').classList.add('active');
-}
-function closeHSKModal() {
-  $('hsk-modal').classList.remove('active');
-}
-function selectHSK(level) {
-  closeHSKModal();
-  startGame(pendingGameMode, level);
-}
-// 급수별 단어 수 표시
-(function showWordCounts() {
-  const data = window.QUIZ_DATA || {};
-  ['hsk4', 'hsk5', 'hsk6'].forEach((l) => {
-    const el = $(`cnt-${l}`);
-    if (el && data[l]) el.textContent = `${data[l].length.toLocaleString()}문제`;
-  });
-})();
 
 // ==========================================
 // ★ 게임 코어 변수 및 블록 데이터 ★
@@ -473,7 +655,10 @@ let isGameLocked = false; // 연출/퀴즈 중 조작 잠금
 let isGameOver = false;
 let quizOpen = false;
 let currentQuiz = null;
-let availableQuizzes = [];
+let quizPool = []; // 이번 단계에서 아직 못 맞힌 단어 (뒤에서부터 출제)
+let stageList = []; // 이번 단계 단어 전체
+let correctCount = 0;
+let wrongCount = 0;
 let gameSession = 0; // 게임마다 증가 → 이전 판의 예약 작업이 새 판을 건드리지 않게
 
 /** 현재 판에서만 실행되는 setTimeout */
@@ -629,15 +814,17 @@ window.visualViewport && window.visualViewport.addEventListener('resize', schedu
 // ==========================================
 // ★ 게임 시작 ★
 // ==========================================
-function startGame(mode, level) {
+function startGame(mode, level, stage = 1) {
   gameMode = mode;
   gameLevel = level;
+  currentStage = stage;
   gameSession++;
+  setLastStage(mode, level, stage);
 
   document.body.className = `theme-${mode} theme-${level}`;
   const levelText = level.toUpperCase().replace('HSK', 'HSK ');
   const modeEl = $('mode-display');
-  modeEl.textContent = mode === 'hell' ? `HELL 🔥 · ${levelText}` : `NORMAL · ${levelText}`;
+  modeEl.textContent = `${mode === 'hell' ? 'HELL' : 'N'} · ${levelText} · ${stage}단계`;
 
   board = Array.from({ length: BOARD_SIZE }, () => Array(BOARD_SIZE).fill(0));
   score = 0;
@@ -652,7 +839,10 @@ function startGame(mode, level) {
   isGameLocked = false;
   isGameOver = false;
   quizOpen = false;
-  availableQuizzes = [];
+  stageList = stageWords(mode, level, stage);
+  quizPool = shuffle([...stageList]);
+  correctCount = 0;
+  wrongCount = 0;
 
   boardWrap.classList.remove('dimmed', 'double-on');
   hideBoardBanner();
@@ -666,8 +856,17 @@ function startGame(mode, level) {
   generateDockBlocks();
 }
 function retryGame() {
-  $('game-over-modal').classList.remove('active');
-  startGame(gameMode, gameLevel);
+  document.querySelectorAll('.modal.active').forEach((m) => m.classList.remove('active'));
+  startGame(gameMode, gameLevel, currentStage);
+}
+function nextStage() {
+  document.querySelectorAll('.modal.active').forEach((m) => m.classList.remove('active'));
+  if (currentStage < stageCount(gameMode, gameLevel)) startGame(gameMode, gameLevel, currentStage + 1);
+  else showStageScreen(gameMode, gameLevel);
+}
+function backToStages() {
+  document.querySelectorAll('.modal.active').forEach((m) => m.classList.remove('active'));
+  showStageScreen(gameMode, gameLevel);
 }
 
 function initBoardHTML() {
@@ -717,8 +916,11 @@ function renderBoard(force = false) {
 
 function updateHUD() {
   $('score').textContent = score.toLocaleString();
-  const best = Math.max(getBestScore(gameMode, gameLevel), score);
+  const best = Math.max(getBestScore(gameMode, gameLevel, currentStage), score);
   $('best-score').textContent = best.toLocaleString();
+  const total = stageList.length || 1;
+  $('word-chip').textContent = `단어 ${correctCount}/${stageList.length}`;
+  $('stage-progress').style.transform = `scaleX(${correctCount / total})`;
   const chip = $('combo-chip');
   chip.textContent = `COMBO ${currentCombo}${isDoubleScoreActive ? ' · x2' : ''}`;
   chip.classList.toggle('on', currentCombo > 0);
@@ -1214,7 +1416,6 @@ function gameOver() {
   isGameOver = true;
   isBombActive = false;
   hideBoardBanner();
-  growAIRivals(gameMode, gameLevel);
   boardWrap.classList.add('dimmed');
 
   const el = $('combo-display');
@@ -1223,22 +1424,43 @@ function gameOver() {
 
   later(() => {
     playBGM('leaderboard');
-    const prevBest = getBestScore(gameMode, gameLevel);
-    $('go-score').textContent = score.toLocaleString();
-    $('go-combo').textContent = maxComboThisRound;
-    $('go-mode').textContent = gameLevel.replace('hsk', 'HSK ');
-    $('go-mode-label').textContent = gameMode === 'hell' ? 'HELL 🔥' : 'NORMAL';
-    $('go-record').hidden = !(score > prevBest && score > 0);
-    $('nickname-input').value = store.get('hskblock_last_nick', '');
-    $('nickname-error').hidden = true;
-    $('game-over-modal').classList.add('active');
+    $('fail-title').textContent = `${currentStage}단계 실패`;
+    $('fail-words').textContent = `${correctCount} / ${stageList.length}`;
+    $('fail-score').textContent = score.toLocaleString();
+    $('fail-bar').style.width = `${(correctCount / Math.max(1, stageList.length)) * 100}%`;
+    $('stage-fail-modal').classList.add('active');
   }, 1300);
 }
 
-function skipRanking() {
-  $('game-over-modal').classList.remove('active');
-  returnToLobby();
+// 단계 클리어
+function stageClear() {
+  isGameOver = true;
+  isGameLocked = true;
+  const stars = starsFor(gameMode, wrongCount);
+  const { isBest, firstClear } = saveStageClear(gameMode, gameLevel, currentStage, stars, score);
+  playBGM('leaderboard');
+  flashScreen('#fff3b0', 0.7);
+
+  $('clear-title').textContent = `${currentStage}단계 클리어!`;
+  $('clear-stars').innerHTML = [1, 2, 3].map((i) => `<span class="${i <= stars ? 'on' : ''}">★</span>`).join('');
+  $('clear-score').textContent = score.toLocaleString();
+  $('clear-combo').textContent = maxComboThisRound;
+  $('clear-wrong').textContent = wrongCount;
+  const total = stageCount(gameMode, gameLevel);
+  const msgs = [];
+  if (isBest && !firstClear) msgs.push('🎉 이 단계 최고 기록 갱신!');
+  if (firstClear && currentStage < total) msgs.push(`🔓 ${currentStage + 1}단계가 열렸어요!`);
+  if (currentStage >= total) msgs.push(`👑 ${levelLabel(gameLevel)}급 마지막 단계까지 클리어!`);
+  $('clear-msg').textContent = msgs.join('  ');
+  $('clear-msg').hidden = !msgs.length;
+  $('clear-next').hidden = currentStage >= total;
+  $('rank-form').hidden = false;
+  $('rank-done').hidden = true;
+  $('nickname-input').value = store.get('hskblock_last_nick', '');
+  $('nickname-error').hidden = true;
+  $('stage-clear-modal').classList.add('active');
 }
+
 $('nickname-input').addEventListener('keydown', (e) => {
   if (e.key === 'Enter') saveRanking();
 });
@@ -1264,7 +1486,7 @@ $('board-banner-btn').addEventListener('click', () => bannerAction && bannerActi
 // 나가기 확인
 let lockBeforeExit = false;
 function openExitConfirm() {
-  if (isGameOver) return returnToLobby();
+  if (isGameOver) return backToStages();
   lockBeforeExit = isGameLocked;
   isGameLocked = true;
   $('exit-modal').classList.add('active');
@@ -1278,7 +1500,7 @@ function exitToLobby() {
   isGameOver = true;
   gameSession++; // 진행 중인 예약 작업 무효화
   if ('speechSynthesis' in window) speechSynthesis.cancel();
-  returnToLobby();
+  showStageScreen(gameMode, gameLevel);
 }
 
 // ==========================================
@@ -1304,13 +1526,11 @@ function triggerNewQuiz() {
   quizOpen = true;
   isGameLocked = true;
 
-  const levelData = (window.QUIZ_DATA && window.QUIZ_DATA[gameLevel]) || [];
-  if (!availableQuizzes.length && levelData.length) availableQuizzes = shuffle([...levelData]);
-  currentQuiz = availableQuizzes.length
-    ? availableQuizzes.pop()
+  currentQuiz = quizPool.length
+    ? quizPool.pop()
     : { q: '데이터 없음', pinyin: '-', a: '확인', options: ['확인', '준비중', '테스트'] };
 
-  $('quiz-tag').textContent = '관문을 통과하라!';
+  $('quiz-tag').textContent = `관문을 통과하라! · 남은 단어 ${stageList.length - correctCount}개`;
   $('quiz-tag').className = 'quiz-tag';
   setQuizWord(currentQuiz.q);
   $('quiz-pinyin').textContent = currentQuiz.pinyin;
@@ -1343,6 +1563,9 @@ function answerQuiz(btn, opt) {
 
   if (correct) {
     playCorrectSound();
+    correctCount++;
+    updateHUD();
+    const cleared = correctCount >= stageList.length;
     later(() => {
       $('quiz-modal').classList.remove('active');
       showGiantHanzi(quiz.q, quiz.pinyin, quiz.a, true);
@@ -1350,12 +1573,16 @@ function answerQuiz(btn, opt) {
     later(() => {
       quizOpen = false;
       if (isGameOver) return;
+      if (cleared) return stageClear();
       generateDockBlocks();
       isGameLocked = false;
     }, 2000);
   } else {
     btn.classList.add('wrong');
     playWrongSound();
+    wrongCount++;
+    // 틀린 단어는 이번 단계 안에서 다시 출제 (바로 다음은 아니게)
+    quizPool.splice(Math.floor(Math.random() * Math.max(1, quizPool.length)), 0, quiz);
     score = Math.max(0, score - 500);
     currentCombo = 0;
     linesClearedThisRound = 0;
@@ -1460,6 +1687,7 @@ window.addEventListener('keydown', (e) => {
     if (isBombActive) cancelBomb();
     else if ($('exit-modal').classList.contains('active')) closeExitConfirm();
     else if ($('hsk-modal').classList.contains('active')) closeHSKModal();
+    else if ($('stage-sheet').classList.contains('active')) closeStageSheet();
   }
 });
 
