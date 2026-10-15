@@ -1221,8 +1221,7 @@ document.querySelectorAll('.dock-slot').forEach((slot) => slot.addEventListener(
 window.addEventListener('pointermove', onPointerMove, { passive: true });
 window.addEventListener('pointerup', onPointerUp);
 window.addEventListener('pointercancel', onPointerUp);
-// iOS 사파리/크롬: 드래그 중 화면 스크롤 방지
-document.addEventListener('touchmove', (e) => drag && e.preventDefault(), { passive: false });
+// 스크롤 방지는 CSS touch-action:none 으로 처리 (touchmove 리스너를 두면 터치 입력이 메인 스레드를 기다려 끊김이 생김)
 
 // 그림자 + 지워질 줄 미리보기
 let shadowEls = [];
