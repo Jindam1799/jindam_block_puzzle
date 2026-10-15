@@ -572,20 +572,30 @@ $('stage-grid').addEventListener('click', (e) => {
 });
 
 // ==========================================
-// ★ 랭킹 (모드·급수별 누적) ★
+// ★ 명예의 전당 (모드·급수별 누적 / 이번 주) ★
+//   - 친구들 기록은 날짜를 기준으로 계산 → 어느 기기에서 봐도 같은 이름·같은 점수
+//   - 친구마다 실력·주로 하는 시간·꾸준함이 달라서 하루하루 순위가 바뀜
 // ==========================================
 let currentRankMode = 'normal';
 let currentRankLevel = 'hsk4';
+let currentRankView = 'all'; // 'all' | 'week'
 let rankBackTo = 'lobby';
 const DAY = 86400000;
-const rivalKey = (mode, level) => `hskblock_rivals_total_${mode}_${level}`;
+const HIST_KEY = 'hskblock_hist_v1';
 const getNick = () => store.get('hskblock_last_nick', '');
+const RANK_EPOCH = new Date(2026, 8, 1).getTime(); // 친구들이 게임을 시작한 기준일
 
-const RIVAL_NAMES = [
-  '하늘별', '민준', '서윤', '판다곰', '만두왕', '탕후루', '지호', '하은', '도윤', '열공러',
-  '샤오룽', '니하오', '수아', '공부벌레', '예준', '은우', '지아', '월병', '용용이', '훠궈',
-  '별빛', '라온', '시우', '마라탕', '하람', '찐빵', '다온', '유나', '우주', '서준',
+// 함께 플레이하는 친구들 (각자 성향이 이름으로 고정됨)
+const ROSTER = [
+  '민준', '서연', '하준이', '지우짱', '도윤123', '예린', '수아공주', '판다조아', '만두는사랑', '탕후루킹',
+  '열공중', '중국어천재', 'HSK합격', 'jiho0312', 'yuna_k', '하늘별', '시우', '은우', '라온', '다온',
+  '연우', '서준', '지안', '하린', '윤서', '채원', '민서', '준우', '건우', '니하오짱',
+  '샤오룽바오', '월병맛있어', '훠궈러버', '마라탕중독', '별빛소녀', '축구왕', '고양이집사', '공부하자', '오늘도출석', '미래통역사',
+  '북경가자', '상하이드림', '팬더곰', '꿀벌', '젤리곰', '딸기우유', '초코칩', '민트초코', '구름빵', '해바라기',
+  '콩떡', '레몬에이드', '토끼발', '대나무숲', '용용이', '짜요짜요', 'minseo07', 'dahyun', '쭝궈마스터', '한자왕',
 ];
+const AVATAR_COLORS = ['#ff8fb1', '#ffb547', '#6fcf97', '#56b4ff', '#a98bff', '#ff8a65', '#4dd0c8', '#f7c948'];
+
 function seededRandom(seedText) {
   let h = 2166136261;
   for (const ch of seedText) h = Math.imul(h ^ ch.charCodeAt(0), 16777619);
@@ -597,12 +607,14 @@ function seededRandom(seedText) {
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
 }
-function shuffleSeeded(arr, rnd) {
-  for (let i = arr.length - 1; i > 0; i--) {
-    const j = Math.floor(rnd() * (i + 1));
-    [arr[i], arr[j]] = [arr[j], arr[i]];
-  }
-  return arr;
+const dayIndex = (ts) => {
+  const d = new Date(ts);
+  return Math.floor((new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime() - RANK_EPOCH) / DAY);
+};
+function weekStart(ts = Date.now()) {
+  const d = new Date(ts);
+  const back = (d.getDay() + 6) % 7; // 월요일 시작
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate() - back).getTime();
 }
 // 단계 하나 클리어 점수 추정 (v2 난이도 시뮬레이션 기준: 노말 25단어 ≈ 2.5~3만, 헬 100단어 ≈ 26만)
 function stageScoreEstimate(mode, level, stage) {
@@ -610,73 +622,112 @@ function stageScoreEstimate(mode, level, stage) {
   const perWord = mode === 'hell' ? 2700 : 1150;
   return perWord * words * (1 + Math.min(stage, 60) * 0.004);
 }
-function loadRivals(mode, level) {
-  const key = rivalKey(mode, level);
-  let rivals = store.get(key, null);
-  if (!rivals) {
-    const rnd = seededRandom(key);
-    const names = shuffleSeeded([...RIVAL_NAMES], rnd).slice(0, 7);
-    const total = stageCount(mode, level);
-    const now = Date.now();
-    const perDay = mode === 'hell' ? 0.25 : 1;
-    rivals = names.map((name, i) => ({
-      name,
-      start: now,
-      base: Math.max(0, Math.round(total * [0.12, 0.08, 0.06, 0.04, 0.02, 0.01, 0][i] + rnd() * 2) - (i > 4 ? 1 : 0)),
-      speed: perDay * (0.25 + rnd() * 0.9),
-      skill: 0.75 + rnd() * 0.45,
-      bonus: 0,
-    }));
-    store.set(key, rivals);
-  }
-  return rivals;
+function kidTraits(name) {
+  const r = seededRandom('kid|' + name);
+  return {
+    skill: 0.68 + r() * 0.5, // 실력
+    hour: 15 + Math.floor(r() * 7), // 주로 하는 시간 (오후 3시~밤 9시대)
+    weekday: 0.12 + r() * 0.5, // 평일에 할 확률
+    weekend: 0.08 + r() * 0.55, // 주말에 할 확률
+  };
 }
-function rivalRows(mode, level) {
+/** 친구 한 명의 오늘까지 기록 계산 */
+function simulateKid(mode, level, name, now) {
+  const seed = `${mode}|${level}|${name}`;
+  const r0 = seededRandom(seed);
+  const join = r0();
+  if (join > (mode === 'hell' ? 0.45 : 0.62)) return null; // 이 급수는 안 하는 친구
+  const k = kidTraits(name);
   const total = stageCount(mode, level);
+  const startDay = Math.floor(Math.pow(r0(), 0.7) * 85) - 15; // 최근에 새로 들어온 친구가 많음
+  const quitAfter = r0() < 0.3 ? 5 + Math.floor(r0() * 30) : 9999; // 중간에 그만둔 친구도 있음
+  const today = dayIndex(now);
+  const nowMin = new Date(now).getHours() * 60 + new Date(now).getMinutes();
+  const wk = weekStart(now);
+  let cleared = 0, score = 0, stars = 0, week = 0, last = 0;
+  for (let d = Math.max(0, startDay); d <= Math.min(today, startDay + quitAfter); d++) {
+    const r = seededRandom(`${seed}|${d}`);
+    const dayTs = RANK_EPOCH + d * DAY;
+    const dow = new Date(dayTs).getDay();
+    if (r() > (dow === 0 || dow === 6 ? k.weekend : k.weekday)) continue;
+    const playMin = k.hour * 60 + Math.floor(r() * 150);
+    if (d === today && nowMin < playMin) continue; // 오늘은 아직 안 함
+    const tries = mode === 'hell' ? 1 : 1 + (r() < 0.35 ? 1 : 0);
+    let played = false;
+    for (let t = 0; t < tries && cleared < total; t++) {
+      played = true;
+      const prog = cleared / Math.max(1, total);
+      const p = mode === 'hell' ? clamp(k.skill * 0.42 - prog * 0.2, 0.06, 0.45) : clamp(k.skill - 0.12 - prog * 0.6, 0.15, 0.9);
+      if (r() > p) break; // 실패하면 그날은 끝
+      cleared++;
+      const s = Math.round((stageScoreEstimate(mode, level, cleared) * k.skill * (0.85 + r() * 0.3)) / 10) * 10;
+      score += s;
+      stars += 1 + (r() < k.skill * 0.75 ? 1 : 0) + (r() < k.skill * 0.45 ? 1 : 0);
+      if (dayTs >= wk) week += s;
+    }
+    if (played) last = dayTs + playMin * 60000 + Math.floor(r() * 25) * 60000;
+  }
+  if (!cleared) return null;
+  return { name, cleared, score, stars, week, last: Math.min(last, now), isPlayer: false };
+}
+let rivalCache = { key: '', rows: [] };
+function rivalRows(mode, level) {
   const now = Date.now();
-  return loadRivals(mode, level)
-    .map((r) => {
-      const days = Math.max(0, (now - r.start) / DAY);
-      const cleared = clamp(Math.floor(r.base + r.bonus + r.speed * days), 0, total);
-      let sum = 0;
-      for (let s = 1; s <= cleared; s++) sum += stageScoreEstimate(mode, level, s) * r.skill;
-      return { name: r.name, cleared, score: Math.round(sum / 10) * 10, stars: Math.round(cleared * (1.6 + r.skill)), isPlayer: false };
-    })
-    .filter((r) => r.cleared > 0);
+  const key = `${mode}|${level}|${Math.floor(now / 60000)}`;
+  if (rivalCache.key !== key) {
+    rivalCache = { key, rows: ROSTER.map((n) => simulateKid(mode, level, n, now)).filter(Boolean) };
+  }
+  return rivalCache.rows;
 }
 function playerRow(mode, level) {
   const prog = levelProgress(mode, level);
-  let cleared = 0;
-  let sum = 0;
-  let stars = 0;
+  let cleared = 0, score = 0, stars = 0;
   for (const k of Object.keys(prog)) {
     if (!/^\d+$/.test(k)) continue;
     cleared++;
-    sum += prog[k].best;
+    score += prog[k].best;
     stars += prog[k].stars;
   }
   if (!cleared) return null;
-  return { name: getNick() || '나', cleared, score: sum, stars, isPlayer: true };
+  const hist = store.get(HIST_KEY, []).filter((h) => h.m === mode && h.l === level);
+  const wk = weekStart();
+  const week = hist.filter((h) => h.t >= wk).reduce((a, h) => a + h.add, 0);
+  const last = hist.length ? hist[hist.length - 1].t : Date.now();
+  return { name: getNick() || '나', cleared, score, stars, week, last, isPlayer: true };
 }
-function rankingRows(mode, level) {
+function recordHistory(mode, level, add) {
+  const hist = store.get(HIST_KEY, []);
+  hist.push({ m: mode, l: level, t: Date.now(), add });
+  store.set(HIST_KEY, hist.slice(-300));
+}
+function rankingRows(mode, level, view = 'all') {
   const me = playerRow(mode, level);
-  return [...rivalRows(mode, level), ...(me ? [me] : [])].sort((a, b) => b.score - a.score);
+  let rows = [...rivalRows(mode, level), ...(me ? [me] : [])];
+  if (view === 'week') rows = rows.filter((r) => r.week > 0 || r.isPlayer).sort((a, b) => b.week - a.week);
+  else rows.sort((a, b) => b.score - a.score);
+  return rows;
 }
-function myRank(mode, level) {
-  return rankingRows(mode, level).findIndex((r) => r.isPlayer) + 1;
+function myRank(mode, level, view = 'all') {
+  return rankingRows(mode, level, view).findIndex((r) => r.isPlayer) + 1;
 }
-function nudgeRivals(mode, level) {
-  const me = playerRow(mode, level);
-  if (!me) return;
-  const rivals = loadRivals(mode, level);
-  const rows = rivalRows(mode, level);
-  rivals.forEach((r) => {
-    const row = rows.find((x) => x.name === r.name);
-    const cleared = row ? row.cleared : 0;
-    if (cleared < me.cleared && cleared >= me.cleared - 2 && Math.random() < 0.3) r.bonus += 1;
-  });
-  store.set(rivalKey(mode, level), rivals);
+function timeAgo(ts) {
+  const diff = Date.now() - ts;
+  if (diff < 5 * 60000) return '방금 전';
+  if (diff < 60 * 60000) return `${Math.floor(diff / 60000)}분 전`;
+  if (diff < DAY && new Date(ts).getDate() === new Date().getDate()) return `${Math.floor(diff / 3600000)}시간 전`;
+  const days = dayIndex(Date.now()) - dayIndex(ts);
+  if (days <= 1) return '어제';
+  if (days < 7) return `${days}일 전`;
+  const d = new Date(ts);
+  return `${d.getMonth() + 1}월 ${d.getDate()}일`;
 }
+function avatarHTML(name) {
+  let h = 0;
+  for (const ch of name) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  const first = [...name][0] || '?';
+  return `<span class="rk-avatar" style="background:${AVATAR_COLORS[h % AVATAR_COLORS.length]}">${escapeHTML(/[a-z]/i.test(first) ? first.toUpperCase() : first)}</span>`;
+}
+
 function updateRankBox(beforeRank) {
   const rank = myRank(gameMode, gameLevel);
   const up = beforeRank > 0 && rank > 0 && rank < beforeRank ? ` (${beforeRank - rank}계단 상승!)` : '';
@@ -721,29 +772,51 @@ function changeRankLevel(level) {
   currentRankLevel = level;
   renderRankingList();
 }
+function changeRankView(view) {
+  sfx.tap();
+  currentRankView = view;
+  renderRankingList();
+}
+function rankRowHTML(r, i, total, view) {
+  const cls = ['ranking-item', i < 3 ? `top${i + 1}` : '', r.isPlayer ? 'me' : ''].join(' ');
+  const shown = view === 'week' ? r.week : r.score;
+  const sub = r.isPlayer ? `${r.cleared}/${total}단계 · 나` : `${r.cleared}/${total}단계 · ${timeAgo(r.last)}`;
+  return `<li class="${cls}">
+    <span class="rk-no">${i + 1}</span>
+    ${avatarHTML(r.name)}
+    <span class="rk-name">${escapeHTML(r.name)}<small>${sub}</small></span>
+    <span class="rk-score">${Number(shown).toLocaleString()}<small>${icon('star')}${r.stars}</small></span>
+  </li>`;
+}
 function renderRankingList() {
   $('tab-normal').classList.toggle('active', currentRankMode === 'normal');
   $('tab-hell').classList.toggle('active', currentRankMode === 'hell');
+  $('tab-all').classList.toggle('active', currentRankView === 'all');
+  $('tab-week').classList.toggle('active', currentRankView === 'week');
   ['hsk4', 'hsk5', 'hsk6'].forEach((l) => $(`tab-rank-${l}`).classList.toggle('active', currentRankLevel === l));
   const total = stageCount(currentRankMode, currentRankLevel);
-  const all = rankingRows(currentRankMode, currentRankLevel);
+  const view = currentRankView;
+  const all = rankingRows(currentRankMode, currentRankLevel, view);
+  const players = rivalRows(currentRankMode, currentRankLevel).length + (playerRow(currentRankMode, currentRankLevel) ? 1 : 0);
+  $('rank-desc').textContent =
+    view === 'week'
+      ? `이번 주(월요일부터) 얻은 점수 순위예요 · 참가자 ${players}명`
+      : `클리어한 단계 최고 점수의 합계 순위예요 · 참가자 ${players}명`;
   const listEl = $('ranking-list');
   if (!all.length) {
     listEl.innerHTML = '<li class="rk-empty">아직 기록이 없어요. 1단계를 클리어해 보세요!</li>';
     return;
   }
-  listEl.innerHTML = all
-    .slice(0, 20)
-    .map((r, i) => {
-      const cls = ['ranking-item', i < 3 ? `top${i + 1}` : '', r.isPlayer ? 'me' : ''].join(' ');
-      return `<li class="${cls}">
-        <span class="rk-no">${i + 1}</span>
-        <span class="rk-name">${escapeHTML(r.name)}<small>${r.cleared} / ${total}단계 클리어</small></span>
-        <span class="rk-score">${Number(r.score).toLocaleString()}<small>${icon('star')}${r.stars}</small></span>
-      </li>`;
-    })
-    .join('');
+  const TOP = 20;
+  let html = all.slice(0, TOP).map((r, i) => rankRowHTML(r, i, total, view)).join('');
+  const myIdx = all.findIndex((r) => r.isPlayer);
+  if (myIdx >= TOP) html += `<li class="rk-gap">···</li>${rankRowHTML(all[myIdx], myIdx, total, view)}`;
+  if (myIdx < 0) html += '<li class="rk-gap">1단계를 클리어하면 나도 순위에 올라가요!</li>';
+  listEl.innerHTML = html;
+  const me = listEl.querySelector('.ranking-item.me');
+  if (me) requestAnimationFrame(() => me.scrollIntoView({ block: 'nearest' }));
 }
+
 function closeRanking() {
   sfx.tap();
   if (rankBackTo === 'stage') showStageScreen(gameMode, gameLevel);
@@ -1868,8 +1941,9 @@ function stageClear() {
   isGameLocked = true;
   const stars = starsFor(gameMode, wrongCount, heartsUsed);
   const rankBefore = myRank(gameMode, gameLevel);
+  const prevBest = getBestScore(gameMode, gameLevel, currentStage);
   const { isBest, firstClear } = saveStageClear(gameMode, gameLevel, currentStage, stars, score);
-  nudgeRivals(gameMode, gameLevel);
+  recordHistory(gameMode, gameLevel, Math.max(0, score - prevBest)); // 이번 주 랭킹용
   playBGM('leaderboard');
   sfx.stageClear();
   flashScreen('#fff3b0', 0.2);

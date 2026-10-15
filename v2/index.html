@@ -235,7 +235,11 @@
           <button id="tab-rank-hsk5" class="seg-btn" onclick="changeRankLevel('hsk5')">HSK 5급</button>
           <button id="tab-rank-hsk6" class="seg-btn" onclick="changeRankLevel('hsk6')">HSK 6급</button>
         </div>
-        <p class="rank-desc">클리어한 단계들의 최고 점수를 모두 더한 누적 랭킹이에요.</p>
+        <div class="seg small" role="tablist">
+          <button id="tab-all" class="seg-btn active" onclick="changeRankView('all')">전체</button>
+          <button id="tab-week" class="seg-btn" onclick="changeRankView('week')">이번 주</button>
+        </div>
+        <p id="rank-desc" class="rank-desc"></p>
         <div class="ranking-list-container">
           <ol id="ranking-list"></ol>
         </div>

@@ -1647,3 +1647,25 @@ body.theme-hell.theme-hsk6 { --bg1: #ffeedd; --bg2: #ffcfc2; --bg3: #ffe0b8; }
     display: none;
   }
 }
+
+/* 명예의 전당: 프로필 동그라미 · 내 순위 고정 */
+.ranking-item {
+  grid-template-columns: 32px 38px 1fr auto;
+}
+.rk-avatar {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  font-family: var(--font-round);
+  font-size: 18px;
+  box-shadow: inset 0 -3px 0 rgba(0, 0, 0, 0.12);
+}
+.rk-gap {
+  text-align: center;
+  color: var(--muted);
+  padding: 8px;
+  font-size: 13px;
+}
