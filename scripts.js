@@ -1,14 +1,59 @@
+/* ==========================================================
+   JD CHINESE · HSK BLOCK PUZZLE — scripts.js
+   ----------------------------------------------------------
+   주요 변경점
+   - 드래그: Pointer Events 1벌로 통합(터치/마우스/펜), 이벤트 중복 등록 버그 제거
+   - 렌더링: 바뀐 칸만 다시 그림, 그림자/지워질 줄 미리보기는 해당 칸만 갱신
+   - 오디오: BGM 1개 엘리먼트로 지연 로딩(시작 시 40MB 선로딩 제거), 효과음 마스터 볼륨
+   - 화면: 세로/가로 자동 레이아웃(폰·패드·데스크탑), 드래그 블록 = 보드 칸 크기
+   - 음성: Tingting 최우선, 없으면 가장 가까운 중국어 여성 음성
+   ========================================================== */
+'use strict';
+
 // ==========================================
-// ★ 방향키 스크롤 방지 로직 ★
+// ★ 유틸 ★
 // ==========================================
+const $ = (id) => document.getElementById(id);
+const store = {
+  get(key, fallback) {
+    try {
+      const v = localStorage.getItem(key);
+      return v == null ? fallback : JSON.parse(v);
+    } catch (e) {
+      return fallback;
+    }
+  },
+  set(key, value) {
+    try {
+      localStorage.setItem(key, JSON.stringify(value));
+    } catch (e) {}
+  },
+};
+const escapeHTML = (s) =>
+  String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+function shuffle(arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
+let toastTimer = null;
+function toast(msg, ms = 1600) {
+  const el = $('toast');
+  el.textContent = msg;
+  el.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => (el.hidden = true), ms);
+}
+
+// 방향키/스페이스 스크롤 방지
 window.addEventListener(
   'keydown',
-  function (e) {
-    if (
-      ['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].indexOf(
-        e.code,
-      ) > -1
-    ) {
+  (e) => {
+    if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code) && e.target.tagName !== 'INPUT') {
       e.preventDefault();
     }
   },
@@ -16,125 +61,287 @@ window.addEventListener(
 );
 
 // ==========================================
-// ★ 오디오(BGM) 관리 시스템 ★
+// ★ 사운드 설정 (0: 모두 켬 / 1: BGM 끔 / 2: 모두 끔) ★
 // ==========================================
-const AUDIO_SOURCES = {
-  intro: new Audio('intro.mp3'),
-  leaderboard: new Audio('leaderboard.mp3'),
-  normal: [
-    'block_bgm.mp3',
-    'block_bgm2.mp3',
-    'block_bgm3.mp3',
-    'block_bgm4.mp3',
-  ].map((src) => new Audio(src)),
-  hell: [
-    'hell_bgm1.mp3',
-    'hell_bgm2.mp3',
-    'hell_bgm3.mp3',
-    'hell_bgm4.mp3',
-  ].map((src) => new Audio(src)),
+let soundMode = store.get('hskblock_sound', 0);
+const SOUND_LABEL = ['🔊 소리 켬', '🎵 BGM 끔', '🔇 음소거'];
+const SOUND_ICON = ['🔊', '🎵', '🔇'];
+const SOUND_TOAST = ['배경음·효과음·음성 모두 켬', '배경음만 끔 (효과음·음성은 켬)', '모든 소리 끔'];
+const bgmOn = () => soundMode === 0;
+const sfxOn = () => soundMode < 2;
+
+function updateSoundUI() {
+  $('btn-sound').textContent = SOUND_ICON[soundMode];
+  $('lobby-sound').textContent = SOUND_LABEL[soundMode];
+}
+function cycleSound() {
+  soundMode = (soundMode + 1) % 3;
+  store.set('hskblock_sound', soundMode);
+  updateSoundUI();
+  toast(SOUND_TOAST[soundMode]);
+  if (bgmOn()) resumeBGM();
+  else bgmEl.pause();
+  if (!sfxOn() && 'speechSynthesis' in window) speechSynthesis.cancel();
+}
+
+// ==========================================
+// ★ 배경음악(BGM) — 엘리먼트 1개, 필요할 때만 로딩 ★
+// ==========================================
+const BGM_LIST = {
+  intro: ['intro.mp3'],
+  leaderboard: ['leaderboard.mp3'],
+  normal: ['block_bgm.mp3', 'block_bgm2.mp3', 'block_bgm3.mp3', 'block_bgm4.mp3'],
+  hell: ['hell_bgm1.mp3', 'hell_bgm2.mp3', 'hell_bgm3.mp3', 'hell_bgm4.mp3'],
 };
+const bgmEl = new Audio();
+bgmEl.preload = 'auto';
+bgmEl.volume = 0.17;
+let bgmType = null;
+let bgmIndex = 0;
+let audioUnlocked = false;
 
-let currentAudio = null;
-let currentPlaylist = [];
-let currentTrackIndex = 0;
-// ... (이하 기존 stopAllBGM() 등의 코드는 그대로 유지)
-function stopAllBGM() {
-  if (currentAudio) {
-    currentAudio.pause();
-    currentAudio.currentTime = 0;
+bgmEl.addEventListener('ended', () => {
+  const list = BGM_LIST[bgmType] || [];
+  if (list.length > 1) {
+    bgmIndex = (bgmIndex + 1) % list.length;
+    startTrack();
   }
+});
+
+function startTrack() {
+  const list = BGM_LIST[bgmType];
+  if (!list || !bgmOn() || !audioUnlocked) return;
+  bgmEl.loop = list.length === 1;
+  const src = list[bgmIndex];
+  if (!bgmEl.src.endsWith(src)) bgmEl.src = src;
+  else bgmEl.currentTime = 0;
+  bgmEl.play().catch(() => {});
 }
-// ==========================================
-// ★ 오디오(BGM) 관리 시스템 (재생 시점에 15% 고정) ★
-// ==========================================
-function playNextTrack() {
-  currentAudio = currentPlaylist[currentTrackIndex];
-
-  // ★ 트랙이 바뀔 때마다 무조건 15%로 고정
-  currentAudio.volume = 0.2;
-
-  currentAudio.onended = () => {
-    currentTrackIndex = (currentTrackIndex + 1) % currentPlaylist.length;
-    playNextTrack();
-  };
-  currentAudio.play().catch((e) => console.log('Audio blocked.'));
-}
-
 function playBGM(type) {
-  stopAllBGM();
-  if (type === 'intro' || type === 'leaderboard') {
-    currentAudio = AUDIO_SOURCES[type];
-    currentAudio.loop = true;
+  if (bgmType === type && !bgmEl.paused) return; // 같은 곡이면 이어서 재생
+  bgmType = type;
+  const list = BGM_LIST[type];
+  bgmIndex = list.length > 1 ? Math.floor(Math.random() * list.length) : 0;
+  bgmEl.pause();
+  startTrack();
+}
+function resumeBGM() {
+  if (!bgmType || !bgmOn() || !audioUnlocked) return;
+  if (bgmEl.src) bgmEl.play().catch(() => {});
+  else startTrack();
+}
+// 앱 전환/화면 꺼짐 시 일시정지
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) bgmEl.pause();
+  else resumeBGM();
+});
 
-    // ★ 인트로나 랭킹 브금이 켜질 때 무조건 15%로 고정
-    currentAudio.volume = 0.2;
-
-    currentAudio.play().catch((e) => console.log('Audio blocked.'));
-  } else {
-    currentPlaylist = AUDIO_SOURCES[type];
-    currentTrackIndex = Math.floor(Math.random() * currentPlaylist.length);
-    playNextTrack();
+// ==========================================
+// ★ 효과음 (Web Audio) — 첫 터치 때 생성, 마스터 볼륨 ★
+// ==========================================
+let audioCtx = null;
+let masterGain = null;
+function ensureAudio() {
+  if (!audioCtx) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return null;
+    audioCtx = new AC();
+    masterGain = audioCtx.createGain();
+    masterGain.gain.value = 0.35;
+    masterGain.connect(audioCtx.destination);
   }
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  return audioCtx;
+}
+/** steps: [[시간, 주파수], ...]  glide: 'exp' | 'lin' | null */
+function tone({ type = 'sine', steps, glide = null, vol = 1, dur = 0.3, delay = 0 }) {
+  if (!sfxOn() || !ensureAudio()) return;
+  const t0 = audioCtx.currentTime + delay;
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = type;
+  steps.forEach(([t, f], i) => {
+    if (i === 0 || !glide) osc.frequency.setValueAtTime(f, t0 + t);
+    else if (glide === 'exp') osc.frequency.exponentialRampToValueAtTime(f, t0 + t);
+    else osc.frequency.linearRampToValueAtTime(f, t0 + t);
+  });
+  gain.gain.setValueAtTime(vol, t0);
+  gain.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
+  osc.connect(gain);
+  gain.connect(masterGain);
+  osc.start(t0);
+  osc.stop(t0 + dur + 0.02);
+}
+const playPlaceSound = () => tone({ type: 'triangle', steps: [[0, 220], [0.06, 140]], glide: 'exp', vol: 0.5, dur: 0.08 });
+const playQuizPopupSound = () => tone({ steps: [[0, 400], [0.15, 800]], glide: 'exp', vol: 1, dur: 0.3 });
+const playClearSound = () => tone({ type: 'square', steps: [[0, 150], [0.15, 40]], glide: 'exp', vol: 0.9, dur: 0.2 });
+const playCorrectSound = () => tone({ type: 'triangle', steps: [[0, 440], [0.1, 554.37], [0.2, 659.25]], vol: 1, dur: 0.4 });
+const playWrongSound = () => tone({ type: 'sawtooth', steps: [[0, 200], [0.4, 50]], glide: 'exp', vol: 0.8, dur: 0.4 });
+const playBombSound = () => tone({ type: 'sawtooth', steps: [[0, 100], [0.5, 10]], glide: 'exp', vol: 1.4, dur: 0.5 });
+const playBonusSpawnSound = () => tone({ steps: [[0, 600], [0.3, 1200]], glide: 'lin', vol: 0.6, dur: 0.4 });
+const playObstacleSpawnSound = () => tone({ type: 'square', steps: [[0, 100], [0.4, 30]], glide: 'exp', vol: 0.9, dur: 0.4 });
+const playRerollSound = () => tone({ steps: [[0, 800], [0.3, 100]], glide: 'exp', vol: 0.8, dur: 0.3 });
+const playBuffSound = () => tone({ type: 'square', steps: [[0, 300], [0.1, 400], [0.2, 600], [0.3, 800]], vol: 0.5, dur: 0.6 });
+const SCALE = [261.63, 293.66, 329.63, 349.23, 392.0, 440.0, 493.88, 523.25];
+function playSequentialComboSounds(startCombo, linesCleared) {
+  for (let i = 0; i < linesCleared; i++) {
+    const n = startCombo + i;
+    const freq = SCALE[(n - 1) % 8] * Math.pow(2, Math.floor((n - 1) / 8));
+    tone({ type: 'sawtooth', steps: [[0, freq]], vol: 0.7, dur: 0.4, delay: i * 0.15 });
+  }
+}
+
+// ==========================================
+// ★ 중국어 음성 (Tingting 우선) ★
+// ==========================================
+let zhVoice = null;
+const voiceText = (v) => `${v.name} ${v.voiceURI}`;
+const isTingting = (v) => /ting-?ting|婷婷/i.test(voiceText(v));
+const isZhCN = (v) => /^(zh[-_]CN|zh[-_]Hans|cmn)/i.test(v.lang) || /^zh$/i.test(v.lang);
+// 위에서부터 차례로 찾음 (Tingting → 여성 표준중국어 대체 음성)
+const VOICE_RULES = [
+  (v) => isTingting(v) && /premium|enhanced|고품질|향상/i.test(voiceText(v)),
+  (v) => isTingting(v),
+  (v) => isZhCN(v) && /Xiaoxiao|晓晓/i.test(v.name),
+  (v) => isZhCN(v) && /Google/i.test(v.name),
+  (v) => isZhCN(v) && /Huihui|Yaoyao|Xiaoyi|Lili|Yu-?shu|慧慧|瑶瑶/i.test(v.name),
+  (v) => isZhCN(v) && !/Kangkang|Yunxi|Yunyang|Yunjian|康康|male/i.test(v.name),
+  (v) => isZhCN(v),
+  (v) => /^zh/i.test(v.lang) && !/HK|TW|yue/i.test(v.lang),
+];
+function pickChineseVoice() {
+  if (!('speechSynthesis' in window)) return null;
+  const voices = speechSynthesis.getVoices();
+  if (!voices.length) return null;
+  for (const rule of VOICE_RULES) {
+    const found = voices.find(rule);
+    if (found) {
+      zhVoice = found;
+      break;
+    }
+  }
+  updateVoiceChip();
+  return zhVoice;
+}
+function updateVoiceChip() {
+  const chip = $('voice-chip');
+  if (!chip) return;
+  if (!('speechSynthesis' in window)) chip.textContent = '🔇 이 브라우저는 음성 미지원';
+  else if (!zhVoice) chip.textContent = '🔊 중국어 음성 없음';
+  else if (isTingting(zhVoice)) chip.textContent = '🔊 음성: Tingting';
+  else chip.textContent = `🔊 대체 음성: ${zhVoice.name.replace(/Microsoft |Google |\(.*?\)|Online|Natural/g, '').trim() || zhVoice.name}`;
+}
+if ('speechSynthesis' in window) {
+  speechSynthesis.addEventListener?.('voiceschanged', pickChineseVoice);
+  speechSynthesis.onvoiceschanged = pickChineseVoice;
+  pickChineseVoice();
+  // 일부 브라우저는 목록을 늦게 줌
+  [300, 1000, 2500].forEach((ms) => setTimeout(() => !zhVoice && pickChineseVoice(), ms));
+}
+// iOS/안드로이드: 첫 터치 때 음성 엔진 깨워두기
+function unlockSpeech() {
+  if (!('speechSynthesis' in window)) return;
+  try {
+    const u = new SpeechSynthesisUtterance(' ');
+    u.volume = 0;
+    speechSynthesis.speak(u);
+  } catch (e) {}
+}
+function speakChinese(text) {
+  if (!sfxOn() || !('speechSynthesis' in window)) return;
+  const clean = String(text).replace(/<[^>]*>/g, '');
+  setTimeout(() => {
+    speechSynthesis.cancel();
+    if (!zhVoice) pickChineseVoice();
+    const u = new SpeechSynthesisUtterance(clean);
+    u.lang = zhVoice ? zhVoice.lang : 'zh-CN';
+    if (zhVoice) u.voice = zhVoice;
+    u.rate = 0.85;
+    u.volume = 1;
+    speechSynthesis.resume();
+    speechSynthesis.speak(u);
+  }, 40);
+}
+$('voice-chip').addEventListener('click', () => {
+  ensureAudio();
+  pickChineseVoice();
+  speakChinese('你好！欢迎来到汉语方块。');
+  if (zhVoice && !isTingting(zhVoice)) toast('이 기기에는 Tingting이 없어 대체 음성을 써요', 2400);
+});
+
+// ==========================================
+// ★ 화면 전환 ★
+// ==========================================
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach((s) => s.classList.toggle('active', s.id === id));
+  if (id === 'game-container') layout();
 }
 
 function initStartScreen() {
-  const startScreen = document.getElementById('start-screen');
-  if (startScreen.style.display !== 'none') {
-    startScreen.style.display = 'none';
-    document.getElementById('lobby-screen').style.display = 'flex';
-    playBGM('intro');
-  }
+  if (!$('start-screen').classList.contains('active')) return;
+  audioUnlocked = true;
+  ensureAudio();
+  unlockSpeech();
+  showScreen('lobby-screen');
+  playBGM('intro');
 }
-document
-  .getElementById('start-screen')
-  .addEventListener('click', initStartScreen);
+$('start-screen').addEventListener('click', initStartScreen);
 document.addEventListener('keydown', initStartScreen);
 
 // ==========================================
-// ★ 랭킹 (로컬스토리지) 시스템 ★
+// ★ 랭킹 (로컬스토리지, 기존 저장 키 그대로 사용) ★
 // ==========================================
-function saveRanking() {
-  const nicknameInput = document.getElementById('nickname-input');
-  const nickname = nicknameInput.value.trim();
+let currentRankMode = 'normal';
+let currentRankLevel = 'hsk4';
+let lastSavedId = null; // 방금 등록한 기록만 강조
 
+const rankKey = (mode, level) => `player_rankings_${mode}_${level}`;
+function getBestScore(mode, level) {
+  const list = store.get(rankKey(mode, level), []);
+  return list.length ? list[0].score : 0;
+}
+
+function saveRanking() {
+  const input = $('nickname-input');
+  const nickname = input.value.trim();
   if (!nickname) {
-    document.getElementById('alert-modal').classList.add('active');
+    $('nickname-error').hidden = false;
+    input.focus();
     return;
   }
-
-  const newRecord = {
+  store.set('hskblock_last_nick', nickname);
+  const key = rankKey(gameMode, gameLevel);
+  let list = store.get(key, []);
+  lastSavedId = Date.now();
+  list.push({
+    id: lastSavedId,
     name: nickname,
-    score: score,
+    score,
     combo: maxComboThisRound,
     date: new Date().toLocaleDateString(),
     isPlayer: true,
-  };
-  let playerRankings =
-    JSON.parse(localStorage.getItem(`player_rankings_${gameMode}`)) || [];
-  playerRankings.push(newRecord);
-  playerRankings.sort((a, b) => b.score - a.score);
-  playerRankings = playerRankings.slice(0, 50);
-  localStorage.setItem(
-    `player_rankings_${gameMode}`,
-    JSON.stringify(playerRankings),
-  );
-
-  document.getElementById('game-over-modal').classList.remove('active');
-  showRankingScreen(gameMode);
+  });
+  list.sort((a, b) => b.score - a.score);
+  store.set(key, list.slice(0, 50));
+  $('game-over-modal').classList.remove('active');
+  showRankingScreen(gameMode, gameLevel);
 }
 
-function closeAlertModal() {
-  document.getElementById('alert-modal').classList.remove('active');
-  document.getElementById('nickname-input').focus();
-}
-
-function showRankingScreen(modeToOpen) {
-  document.getElementById('lobby-screen').style.display = 'none';
-  document.getElementById('game-container').style.display = 'none';
-  document.getElementById('ranking-screen').style.display = 'flex';
+function showRankingScreen(mode = 'normal', level = 'hsk4') {
+  showScreen('ranking-screen');
+  document.body.className = '';
   playBGM('leaderboard');
-  renderRankingList(modeToOpen);
+  currentRankMode = mode;
+  currentRankLevel = level;
+  renderRankingList();
+}
+function changeRankMode(mode) {
+  currentRankMode = mode;
+  renderRankingList();
+}
+function changeRankLevel(level) {
+  currentRankLevel = level;
+  renderRankingList();
 }
 
 const AI_RIVALS = {
@@ -144,876 +351,686 @@ const AI_RIVALS = {
   ],
   hell: [
     { name: '사마의', baseScore: 250000, combo: 35, isPlayer: false },
-    {
-      name: '진시황',
-      baseScore: 210000,
-      combo: 28,
-      isPlayer: false,
-    },
+    { name: '진시황', baseScore: 210000, combo: 28, isPlayer: false },
   ],
 };
-
-function growAIRivals(mode) {
-  let rivals = JSON.parse(localStorage.getItem(`ai_rivals_${mode}`));
-
+function growAIRivals(mode, level) {
+  const key = `ai_rivals_${mode}_${level}`;
+  let rivals = store.get(key, null);
   if (!rivals) {
-    rivals = AI_RIVALS[mode].map((r) => ({ ...r, currentScore: r.baseScore }));
+    rivals = AI_RIVALS[mode].map((r) => ({ ...r, currentScore: r.baseScore, date: new Date().toLocaleDateString() }));
   } else {
-    // 1. 현재 플레이어의 최고 점수 가져오기
-    let playerRankings =
-      JSON.parse(localStorage.getItem(`player_rankings_${mode}`)) || [];
-    let playerBestScore =
-      playerRankings.length > 0 ? playerRankings[0].score : 0;
-
-    // index 0: 1등 AI (제갈공명 / 사마의)
-    // index 1: 2등 AI (이소룡 / 진시황)
-    rivals.forEach((r, index) => {
-      let playChance = 0;
-      let scoreIncrease = 0;
-
-      if (index === 0) {
-        // [1등 AI 성향] 여유 10% / 분노 40% (점수 증가폭: 2500 ~ 7490)
-        playChance = r.currentScore > playerBestScore ? 0.1 : 0.4;
-        scoreIncrease = (Math.floor(Math.random() * 500) + 250) * 10;
-      } else {
-        // [2등 AI 성향] 꾸준함 15% / 분노 30% (점수 증가폭: 1500 ~ 4490 - 조금씩 오름)
-        playChance = r.currentScore > playerBestScore ? 0.15 : 0.3;
-        scoreIncrease = (Math.floor(Math.random() * 300) + 150) * 10;
-      }
-
-      // 확률에 당첨되었을 때만(AI가 게임을 했을 때만) 점수 증가
-      if (Math.random() < playChance) {
-        r.currentScore += scoreIncrease;
-
-        // 5% 확률로 최대 콤보 기록도 갱신
+    const playerBest = getBestScore(mode, level);
+    rivals.forEach((r, i) => {
+      const ahead = r.currentScore > playerBest;
+      const chance = i === 0 ? (ahead ? 0.1 : 0.4) : ahead ? 0.15 : 0.3;
+      const inc = i === 0 ? (Math.floor(Math.random() * 500) + 250) * 10 : (Math.floor(Math.random() * 300) + 150) * 10;
+      if (Math.random() < chance) {
+        r.currentScore += inc;
+        r.date = new Date().toLocaleDateString();
         if (Math.random() < 0.05) r.combo += 1;
       }
     });
   }
-
-  localStorage.setItem(`ai_rivals_${mode}`, JSON.stringify(rivals));
+  store.set(key, rivals);
 }
-
-function getAIRivals(mode) {
-  let rivals = JSON.parse(localStorage.getItem(`ai_rivals_${mode}`));
+function getAIRivals(mode, level) {
+  const key = `ai_rivals_${mode}_${level}`;
+  let rivals = store.get(key, null);
   if (!rivals) {
-    rivals = AI_RIVALS[mode].map((r) => ({ ...r, currentScore: r.baseScore }));
-    localStorage.setItem(`ai_rivals_${mode}`, JSON.stringify(rivals));
+    rivals = AI_RIVALS[mode].map((r) => ({ ...r, currentScore: r.baseScore, date: new Date().toLocaleDateString() }));
+    store.set(key, rivals);
+  } else if (rivals.some((r) => !r.date)) {
+    // 예전 버전에서 저장된 기록에도 날짜를 채워 다른 기록과 똑같이 보이게
+    rivals.forEach((r) => (r.date = r.date || new Date().toLocaleDateString()));
+    store.set(key, rivals);
   }
-  return rivals.map((r) => ({
-    name: r.name,
-    score: r.currentScore,
-    combo: r.combo,
-    isPlayer: false,
-  }));
+  return rivals.map((r) => ({ name: r.name, score: r.currentScore, combo: r.combo, date: r.date || '', isPlayer: false }));
 }
 
-function renderRankingList(mode) {
-  document
-    .getElementById('tab-normal')
-    .classList.toggle('active', mode === 'normal');
-  document
-    .getElementById('tab-hell')
-    .classList.toggle('active', mode === 'hell');
+function renderRankingList() {
+  $('tab-normal').classList.toggle('active', currentRankMode === 'normal');
+  $('tab-hell').classList.toggle('active', currentRankMode === 'hell');
+  ['hsk4', 'hsk5', 'hsk6'].forEach((l) => $(`tab-rank-${l}`).classList.toggle('active', currentRankLevel === l));
 
-  const listEl = document.getElementById('ranking-list');
-  listEl.innerHTML = '';
-  let playerRankings =
-    JSON.parse(localStorage.getItem(`player_rankings_${mode}`)) || [];
-  let aiRankings = getAIRivals(mode);
+  const players = store.get(rankKey(currentRankMode, currentRankLevel), []);
+  const all = [...players, ...getAIRivals(currentRankMode, currentRankLevel)]
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 15);
 
-  let combinedRankings = [...playerRankings, ...aiRankings];
-  combinedRankings.sort((a, b) => b.score - a.score);
-  combinedRankings = combinedRankings.slice(0, 15);
-
-  if (combinedRankings.length === 0) {
-    listEl.innerHTML =
-      "<li style='text-align:center; padding: 20px; color: #888;'>등록된 랭킹이 없습니다.</li>";
+  const listEl = $('ranking-list');
+  if (!all.length) {
+    listEl.innerHTML = '<li class="rk-empty">등록된 랭킹이 없습니다.</li>';
     return;
   }
-
-  combinedRankings.forEach((record, index) => {
-    const li = document.createElement('li');
-    li.className = 'ranking-item';
-
-    // 등수별 메달 색상
-    let rankColor =
-      index === 0
-        ? '#ffd700'
-        : index === 1
-          ? '#c0c0c0'
-          : index === 2
-            ? '#cd7f32'
-            : '#fff';
-
-    // ★ AI 가독성 개선: 기존 #888에서 밝은 은회색(#e0e0e0)으로 변경 및 그림자 추가 ★
-    const nameColor = record.isPlayer ? '#00ffcc' : '#e0e0e0';
-    const nameShadow = record.isPlayer
-      ? 'text-shadow: 0 0 10px #00ffcc;'
-      : 'text-shadow: 0 0 5px rgba(255,255,255,0.4);'; // AI에게도 부드러운 그림자 부여
-
-    li.innerHTML = `
-        <div>
-            <span style="display:inline-block; width: 35px; color:${rankColor}; font-weight:900; font-size:15pt;">${index + 1}.</span> 
-            <span style="font-size: 13pt; font-weight: bold; color: ${nameColor}; ${nameShadow}">${record.name}</span>
-        </div>
-        <div class="rank-info">
-            <span class="rank-score" style="color:${rankColor};">${record.score.toLocaleString()} 점</span>
-            <span class="rank-combo">MAX ${record.combo} COMBO</span>
-        </div>
-    `;
-    listEl.appendChild(li);
-  });
+  listEl.innerHTML = all
+    .map((r, i) => {
+      const cls = ['ranking-item', i < 3 ? `top${i + 1}` : '', lastSavedId && r.id === lastSavedId ? 'me' : ''].join(' ');
+      const medal = ['🥇', '🥈', '🥉'][i] || i + 1;
+      const sub = r.date || '';
+      return `<li class="${cls}">
+        <span class="rk-no">${medal}</span>
+        <span class="rk-name">${escapeHTML(r.name)}<small>${escapeHTML(sub)}</small></span>
+        <span class="rk-score">${Number(r.score).toLocaleString()}<small>MAX ${r.combo} COMBO</small></span>
+      </li>`;
+    })
+    .join('');
 }
 
 function returnToLobby() {
-  document.getElementById('ranking-screen').style.display = 'none';
-  document.getElementById('lobby-screen').style.display = 'flex';
+  document.body.className = '';
+  document.querySelectorAll('.float-text, .giant-hanzi-overlay').forEach((el) => el.remove());
+  showScreen('lobby-screen');
   playBGM('intro');
 }
 
 // ==========================================
-// ★ 게임 코어 시스템 ★
+// ★ 급수 선택 ★
+// ==========================================
+let pendingGameMode = 'normal';
+let gameLevel = 'hsk4';
+
+function openHSKModal(mode) {
+  pendingGameMode = mode;
+  const title = $('hsk-modal-title');
+  title.textContent = mode === 'hell' ? 'HELL 🔥 · 급수 선택' : 'NORMAL · 급수 선택';
+  title.style.color = mode === 'hell' ? '#ff8a9e' : '#7ff5e3';
+  $('hsk-modal').classList.add('active');
+}
+function closeHSKModal() {
+  $('hsk-modal').classList.remove('active');
+}
+function selectHSK(level) {
+  closeHSKModal();
+  startGame(pendingGameMode, level);
+}
+// 급수별 단어 수 표시
+(function showWordCounts() {
+  const data = window.QUIZ_DATA || {};
+  ['hsk4', 'hsk5', 'hsk6'].forEach((l) => {
+    const el = $(`cnt-${l}`);
+    if (el && data[l]) el.textContent = `${data[l].length.toLocaleString()}문제`;
+  });
+})();
+
+// ==========================================
+// ★ 게임 코어 변수 및 블록 데이터 ★
 // ==========================================
 const BOARD_SIZE = 8;
-let board = Array(BOARD_SIZE)
-  .fill(null)
-  .map(() => Array(BOARD_SIZE).fill(0));
-let correctQuizzesThisRound = []; // ★ 추가: 이번 판에 맞힌 문제들을 모아두는 배열
+let board = [];
 let score = 0;
 let currentDockBlocks = [null, null, null];
-let activeDragIndex = null;
-let isDragging = false;
 let gameMode = 'normal';
 let currentCombo = 0;
 let maxComboThisRound = 0;
 let linesClearedThisRound = 0;
-let wrongReviewList = []; // ★ 추가: 틀린 문제들을 모아두는 배열 (게임 오버 시 리뷰용)
-let currentQuiz = null; // 현재 출제된 문제를 저장할 변수
-let availableQuizzes = []; // ★ 퀴즈 중복 출제 방지를 위한 남은 문제 배열
+
+let nextQuizIsBonus = false;
+let playerItems = { bomb: 0, reroll: 0, doubleScore: 0 };
+let isBombActive = false;
+let isDoubleScoreActive = false;
+let isGameLocked = false; // 연출/퀴즈 중 조작 잠금
+let isGameOver = false;
+let quizOpen = false;
+let currentQuiz = null;
+let availableQuizzes = [];
+let gameSession = 0; // 게임마다 증가 → 이전 판의 예약 작업이 새 판을 건드리지 않게
+
+/** 현재 판에서만 실행되는 setTimeout */
+function later(fn, ms) {
+  const session = gameSession;
+  return setTimeout(() => {
+    if (session === gameSession) fn();
+  }, ms);
+}
+
 const GOOD_BLOCKS = [
   [[1, 1, 1, 1]],
   [[1], [1], [1], [1]],
-  [
-    [1, 1],
-    [1, 1],
-  ],
-
+  [[1, 1], [1, 1]],
   [[1, 1, 1]],
   [[1], [1], [1]],
-  [
-    [1, 1, 1],
-    [1, 1, 1],
-  ],
-  [
-    [1, 1],
-    [1, 1],
-    [1, 1],
-  ],
+  [[1, 1, 1], [1, 1, 1]],
+  [[1, 1], [1, 1], [1, 1]],
 ];
 const NORMAL_BLOCKS = [
-  [
-    [1, 1],
-    [0, 1],
-  ],
-  [
-    [1, 1],
-    [1, 0],
-  ],
-  [
-    [0, 1],
-    [1, 1],
-  ],
-  [
-    [1, 0],
-    [1, 1],
-  ],
-  [
-    [1, 1, 1],
-    [1, 1, 1],
-    [1, 1, 1],
-  ],
-  [
-    [1, 1, 1],
-    [0, 1, 0],
-  ],
-  [
-    [0, 1, 0],
-    [1, 1, 1],
-  ],
-  [
-    [1, 0],
-    [1, 1],
-    [1, 0],
-  ],
-  [
-    [0, 1],
-    [1, 1],
-    [0, 1],
-  ],
-  [
-    [1, 0],
-    [1, 0],
-    [1, 1],
-  ],
-  [
-    [0, 1],
-    [0, 1],
-    [1, 1],
-  ],
+  [[1, 1], [0, 1]],
+  [[1, 1], [1, 0]],
+  [[0, 1], [1, 1]],
+  [[1, 0], [1, 1]],
+  [[1, 1, 1], [1, 1, 1], [1, 1, 1]],
+  [[1, 1, 1], [0, 1, 0]],
+  [[0, 1, 0], [1, 1, 1]],
+  [[1, 0], [1, 1], [1, 0]],
+  [[0, 1], [1, 1], [0, 1]],
+  [[1, 0], [1, 0], [1, 1]],
+  [[0, 1], [0, 1], [1, 1]],
   [[1, 1, 1, 1, 1]],
   [[1], [1], [1], [1], [1]],
-
-  [
-    [1, 1, 1],
-    [1, 0, 0],
-  ],
-  [
-    [1, 1, 1],
-    [0, 0, 1],
-  ],
-  [
-    [1, 0],
-    [1, 0],
-    [1, 1],
-  ],
-  [
-    [0, 1],
-    [0, 1],
-    [1, 1],
-  ],
-
-  [
-    [0, 1],
-    [1, 1],
-    [1, 0],
-  ],
-  [
-    [1, 0],
-    [1, 1],
-    [0, 1],
-  ],
-  [
-    [1, 1, 0],
-    [0, 1, 1],
-  ],
-  [
-    [0, 1, 1],
-    [1, 1, 0],
-  ],
+  [[1, 1, 1], [1, 0, 0]],
+  [[1, 1, 1], [0, 0, 1]],
+  [[1, 0], [1, 0], [1, 1]],
+  [[0, 1], [0, 1], [1, 1]],
+  [[0, 1], [1, 1], [1, 0]],
+  [[1, 0], [1, 1], [0, 1]],
+  [[1, 1, 0], [0, 1, 1]],
+  [[0, 1, 1], [1, 1, 0]],
 ];
 const HARD_BLOCKS = [
-  [
-    [1, 1, 1],
-    [0, 1, 0],
-    [1, 1, 1],
-  ],
-  [
-    [0, 1, 0],
-    [0, 1, 0],
-    [1, 1, 1],
-  ],
-  [
-    [1, 1, 1],
-    [0, 1, 0],
-    [0, 1, 0],
-  ],
-  [
-    [1, 0, 0],
-    [1, 0, 0],
-    [1, 1, 1],
-  ],
-  [
-    [0, 0, 1],
-    [0, 0, 1],
-    [1, 1, 1],
-  ],
-  [
-    [1, 1, 1],
-    [1, 0, 0],
-    [1, 0, 0],
-  ],
-  [
-    [1, 1, 1],
-    [0, 0, 1],
-    [0, 0, 1],
-  ],
-  [
-    [1, 1, 0],
-    [1, 1, 1],
-  ],
-  [
-    [0, 1, 1],
-    [1, 1, 1],
-  ],
-  [
-    [1, 1, 1],
-    [1, 1, 0],
-  ],
-  [
-    [1, 1, 1],
-    [0, 1, 1],
-  ],
+  [[1, 1, 1], [0, 1, 0], [1, 1, 1]],
+  [[0, 1, 0], [0, 1, 0], [1, 1, 1]],
+  [[1, 1, 1], [0, 1, 0], [0, 1, 0]],
+  [[1, 0, 0], [1, 0, 0], [1, 1, 1]],
+  [[0, 0, 1], [0, 0, 1], [1, 1, 1]],
+  [[1, 1, 1], [1, 0, 0], [1, 0, 0]],
+  [[1, 1, 1], [0, 0, 1], [0, 0, 1]],
+  [[1, 1, 0], [1, 1, 1]],
+  [[0, 1, 1], [1, 1, 1]],
+  [[1, 1, 1], [1, 1, 0]],
+  [[1, 1, 1], [0, 1, 1]],
 ];
 
-function startGame(mode) {
-  gameMode = mode;
-  document.getElementById('lobby-screen').style.display = 'none';
-  document.getElementById('game-container').style.display = 'flex';
+// DOM 캐시
+const gridEl = $('grid-board');
+const boardWrap = $('board-wrapper');
+const gameEl = $('game-container');
+const overlayEl = $('drag-overlay');
+let cellEls = []; // [r][c]
+let rendered = []; // 화면에 그려진 값 캐시
 
-  if (mode === 'hell') {
-    document.body.classList.add('hell-theme');
-    document.getElementById('mode-display').innerText = 'HELL 🔥';
-    document.getElementById('mode-display').style.color = '#ff003c';
+// ==========================================
+// ★ 반응형 레이아웃 계산 (폰·패드·데스크탑 / 세로·가로) ★
+// ==========================================
+const layoutInfo = { cell: 40, gap: 3 };
+const measured = { portrait: { hud: 64, items: 50 }, landscape: { hud: 112, items: 50 } };
+
+function computeLayout(W, H, landscape) {
+  const pad = Math.round(clamp(Math.min(W, H) * 0.03, 8, 24));
+  const gapUI = Math.round(clamp(Math.min(W, H) * 0.018, 8, 14));
+  const m = measured[landscape ? 'landscape' : 'portrait'];
+  let boardPx, sidePx, dockH, dockDir = 'row';
+  if (!landscape) {
+    // 세로: HUD / 보드 / 독(보드의 0.3배) / 아이템
+    boardPx = Math.min(W - pad * 2, (H - pad * 2 - m.hud - m.items - gapUI * 3) / 1.3, 680);
+    dockH = Math.max(84, Math.round(boardPx * 0.3));
+    sidePx = boardPx;
   } else {
-    document.body.classList.remove('hell-theme');
-    document.getElementById('mode-display').innerText = 'NORMAL';
-    document.getElementById('mode-display').style.color = '#ff00ff';
+    // 가로: 왼쪽 보드 / 오른쪽 패널(HUD·독·아이템)
+    sidePx = Math.round(clamp(W * 0.3, 240, 380));
+    boardPx = Math.min(H - pad * 2, W - pad * 2 - sidePx - gapUI, 860);
+    const spare = W - pad * 2 - boardPx - gapUI;
+    if (spare > sidePx) sidePx = Math.min(420, spare);
+    dockH = Math.max(80, Math.round(boardPx - m.hud - m.items - gapUI * 2));
   }
+  boardPx = Math.floor(boardPx);
+  const bpad = Math.round(clamp(boardPx * 0.014, 4, 10));
+  const gap = Math.round(clamp(boardPx * 0.008, 2, 6));
+  const cell = Math.floor((boardPx - bpad * 2 - 2 - gap * 7) / BOARD_SIZE);
 
-  playBGM(mode);
-  const boardWrapper = document.getElementById('board-wrapper');
-  if (boardWrapper) boardWrapper.style.filter = 'none';
-  board = Array(BOARD_SIZE)
-    .fill(null)
-    .map(() => Array(BOARD_SIZE).fill(0));
+  const inner = 12;
+  let pc;
+  if (landscape) {
+    const rowPc = Math.min((sidePx - inner) / 3, dockH - inner) / 5.3;
+    const colPc = Math.min(sidePx - inner, (dockH - inner) / 3) / 5.3;
+    dockDir = colPc > rowPc ? 'col' : 'row';
+    pc = Math.max(rowPc, colPc);
+  } else {
+    pc = Math.min((sidePx - inner) / 3, dockH - inner) / 5.3;
+  }
+  pc = Math.floor(clamp(pc, 10, cell * 0.6));
+  return { pad, gapUI, boardPx, sidePx, dockH, dockDir, bpad, gap, cell, pc };
+}
+
+function applyLayout(L, landscape) {
+  const root = document.documentElement.style;
+  root.setProperty('--board', L.boardPx + 'px');
+  root.setProperty('--cell', L.cell + 'px');
+  root.setProperty('--gap', L.gap + 'px');
+  root.setProperty('--bpad', L.bpad + 'px');
+  root.setProperty('--pc', L.pc + 'px');
+  root.setProperty('--side', L.sidePx + 'px');
+  root.setProperty('--dock-h', L.dockH + 'px');
+  root.setProperty('--pad', L.pad + 'px');
+  root.setProperty('--gap-ui', L.gapUI + 'px');
+  gameEl.dataset.layout = landscape ? 'landscape' : 'portrait';
+  $('block-dock').dataset.dir = L.dockDir;
+  layoutInfo.cell = L.cell;
+  layoutInfo.gap = L.gap;
+}
+
+function layout() {
+  const vv = window.visualViewport;
+  const W = Math.round(vv ? vv.width : window.innerWidth);
+  const H = Math.round(vv ? vv.height : window.innerHeight);
+  const landscape = W / H > 1.15;
+  applyLayout(computeLayout(W, H, landscape), landscape);
+  // 실제 HUD·아이템 높이를 재서 한 번 더 맞춤
+  if (gameEl.classList.contains('active')) {
+    const m = measured[landscape ? 'landscape' : 'portrait'];
+    const hud = gameEl.querySelector('.hud').offsetHeight;
+    const items = $('inventory-container').offsetHeight;
+    if (hud && items && (Math.abs(hud - m.hud) > 1 || Math.abs(items - m.items) > 1)) {
+      m.hud = hud;
+      m.items = items;
+      applyLayout(computeLayout(W, H, landscape), landscape);
+    }
+  }
+}
+let layoutRAF = 0;
+function scheduleLayout() {
+  if (drag) return; // 드래그 중엔 크기 변경 미룸
+  cancelAnimationFrame(layoutRAF);
+  layoutRAF = requestAnimationFrame(layout);
+}
+window.addEventListener('resize', scheduleLayout);
+window.addEventListener('orientationchange', () => setTimeout(layout, 200));
+window.visualViewport && window.visualViewport.addEventListener('resize', scheduleLayout);
+
+// ==========================================
+// ★ 게임 시작 ★
+// ==========================================
+function startGame(mode, level) {
+  gameMode = mode;
+  gameLevel = level;
+  gameSession++;
+
+  document.body.className = `theme-${mode} theme-${level}`;
+  const levelText = level.toUpperCase().replace('HSK', 'HSK ');
+  const modeEl = $('mode-display');
+  modeEl.textContent = mode === 'hell' ? `HELL 🔥 · ${levelText}` : `NORMAL · ${levelText}`;
+
+  board = Array.from({ length: BOARD_SIZE }, () => Array(BOARD_SIZE).fill(0));
   score = 0;
   currentCombo = 0;
   maxComboThisRound = 0;
   linesClearedThisRound = 0;
-  correctQuizzesThisRound = []; // ★ 새 게임 시작 시 맞힌 문제 배열 초기화 추가 ★
-  availableQuizzes = []; // ★ 새 게임 시작 시 문제 덱 초기화 추가 ★
-  wrongReviewList = []; // 게임을 새로 시작할 때마다 초기화
+  nextQuizIsBonus = false;
+  playerItems = { bomb: 0, reroll: 0, doubleScore: 0 };
+  isBombActive = false;
+  bombPreview = null;
+  isDoubleScoreActive = false;
+  isGameLocked = false;
+  isGameOver = false;
+  quizOpen = false;
+  availableQuizzes = [];
+
+  boardWrap.classList.remove('dimmed', 'double-on');
+  hideBoardBanner();
+  document.querySelectorAll('.modal.active').forEach((m) => m.classList.remove('active'));
+
+  showScreen('game-container');
+  playBGM(mode);
   initBoardHTML();
+  updateInventoryUI();
+  updateHUD();
   generateDockBlocks();
-  setupTouchEvents();
+}
+function retryGame() {
+  $('game-over-modal').classList.remove('active');
+  startGame(gameMode, gameLevel);
 }
 
 function initBoardHTML() {
-  const boardEl = document.getElementById('grid-board');
-  boardEl.innerHTML = '';
+  gridEl.innerHTML = '';
+  cellEls = [];
+  rendered = [];
+  const frag = document.createDocumentFragment();
+  for (let r = 0; r < BOARD_SIZE; r++) {
+    cellEls.push([]);
+    rendered.push(Array(BOARD_SIZE).fill(-1));
+    for (let c = 0; c < BOARD_SIZE; c++) {
+      const el = document.createElement('div');
+      el.className = 'grid-cell';
+      el.dataset.r = r;
+      el.dataset.c = c;
+      cellEls[r].push(el);
+      frag.appendChild(el);
+    }
+  }
+  gridEl.appendChild(frag);
+  renderBoard(true);
+}
+
+/** 바뀐 칸만 다시 그림 (버벅임 개선 핵심) */
+function renderBoard(force = false) {
   for (let r = 0; r < BOARD_SIZE; r++) {
     for (let c = 0; c < BOARD_SIZE; c++) {
-      const cellEl = document.createElement('div');
-      cellEl.className = 'grid-cell';
-      cellEl.id = `cell-${r}-${c}`;
-      boardEl.appendChild(cellEl);
-    }
-  }
-  renderBoard();
-}
-
-function renderBoard() {
-  for (let r = 0; r < BOARD_SIZE; r++) {
-    for (let c = 0; c < BOARD_SIZE; c++) {
-      const cellEl = document.getElementById(`cell-${r}-${c}`);
-      cellEl.className = 'grid-cell';
-      cellEl.innerText = '';
-      const val = board[r][c];
-      if (val >= 1 && val <= 3) cellEl.classList.add(`color-${val}`);
-      else if (val >= 11) {
-        cellEl.classList.add('cell-obstacle');
-        cellEl.innerText = val - 10;
+      const v = board[r][c];
+      if (!force && rendered[r][c] === v) continue;
+      rendered[r][c] = v;
+      const el = cellEls[r][c];
+      let cls = 'grid-cell';
+      let txt = '';
+      if (v >= 1 && v <= 4) {
+        cls += ` color-${v}`;
+        if (v === 4) txt = '🎁';
+      } else if (v >= 11) {
+        cls += ' cell-obstacle';
+        txt = String(v - 10);
       }
+      el.className = cls;
+      el.textContent = txt;
     }
   }
-  document.getElementById('score').innerText = score;
-}
-// ==========================================
-// ★ Web Speech API 기반 중국어 TTS (자막 제거 / 즉시 재생) ★
-// ==========================================
-let synth = window.speechSynthesis;
-let chineseVoices = [];
-
-function loadVoices() {
-  let voices = synth.getVoices();
-  chineseVoices = voices.filter(
-    (v) => v.lang.includes('zh') || v.lang.includes('cmn'),
-  );
-}
-loadVoices();
-if (synth.onvoiceschanged !== undefined) {
-  synth.onvoiceschanged = loadVoices;
+  updateHUD();
 }
 
-function speakChineseTTS(text) {
-  if (synth.speaking) synth.cancel(); // 기존 음성이 있다면 끊고 새로 시작
-
-  const utterance = new SpeechSynthesisUtterance(text);
-  utterance.lang = 'zh-CN';
-
-  // 1. 남성 목소리 철저히 배제 (필터링)
-  const maleKeywords = [
-    'male',
-    'kangkang',
-    'jianjian',
-    'yunjian',
-    'yunxi',
-    'yunyang',
-    'boy',
-    'man',
-  ];
-  let safeVoices = chineseVoices.filter((v) => {
-    let name = v.name.toLowerCase();
-    return !maleKeywords.some((kw) => name.includes(kw));
-  });
-
-  // 2. 알려진 모든 OS의 여성 보이스 키워드 총동원
-  const femaleKeywords = [
-    'female',
-    'xiaoxiao',
-    'yaoyao',
-    'huihui',
-    'ting-ting',
-    'tingting',
-    'mei-jia',
-    'meijia',
-    'lili',
-    'shanshan',
-    'yanting',
-    'qien-ru',
-    'sin-ji',
-    'sinji',
-    'zhiyu',
-    'zhimin',
-    'girl',
-    'woman',
-  ];
-
-  let selectedVoice = safeVoices.find((v) => {
-    let name = v.name.toLowerCase();
-    return femaleKeywords.some((kw) => name.includes(kw));
-  });
-
-  // 여성 키워드가 명시되어 있지 않다면, 남성 보이스가 제외된 안전한 보이스 중 첫 번째 선택
-  if (!selectedVoice && safeVoices.length > 0) {
-    selectedVoice = safeVoices[0];
-  }
-
-  if (selectedVoice) {
-    utterance.voice = selectedVoice;
-  } else if (chineseVoices.length > 0) {
-    utterance.voice = chineseVoices[0];
-  }
-
-  // ★ 3. 강제 여성톤 만들기: 음높이(pitch)를 1.4로 대폭 올려서 무조건 하이톤으로 들리게 조절 ★
-  utterance.pitch = 1.0;
-  utterance.rate = 0.7; // 0.7배속 유지
-
-  synth.speak(utterance);
-}
-
-// 다시듣기 버튼 작동 함수
-function replayTTS() {
-  if (currentQuiz) {
-    speakChineseTTS(currentQuiz.q);
-  }
+function updateHUD() {
+  $('score').textContent = score.toLocaleString();
+  const best = Math.max(getBestScore(gameMode, gameLevel), score);
+  $('best-score').textContent = best.toLocaleString();
+  const chip = $('combo-chip');
+  chip.textContent = `COMBO ${currentCombo}${isDoubleScoreActive ? ' · x2' : ''}`;
+  chip.classList.toggle('on', currentCombo > 0);
 }
 
 // ==========================================
-// ★ 퀴즈 시스템 ★
+// ★ 방해 블록 / 보너스 블록 ★
 // ==========================================
-let currentLevel = 1;
-
-function selectLevel(level) {
-  currentLevel = level;
-  document.getElementById('btn-lv1').classList.toggle('active', level === 1);
-  document.getElementById('btn-lv2').classList.toggle('active', level === 2);
-  availableQuizzes = [];
-}
-
-function triggerNewQuiz() {
-  const modal = document.getElementById('quiz-modal');
-  const feedback = document.getElementById('quiz-feedback');
-  const hintBtn = document.getElementById('hint-btn');
-  const pinyinDisplay = document.getElementById('quiz-pinyin');
-
-  feedback.innerText = '';
-  hintBtn.style.display = 'inline-block';
-  pinyinDisplay.style.display = 'none';
-
-  if (availableQuizzes.length === 0) {
-    const sourceData =
-      currentLevel === 1
-        ? typeof QUIZ_DATA_LEVEL1 !== 'undefined'
-          ? QUIZ_DATA_LEVEL1
-          : []
-        : typeof QUIZ_DATA_LEVEL2 !== 'undefined'
-          ? QUIZ_DATA_LEVEL2
-          : [];
-
-    if (sourceData.length === 0) {
-      console.warn('경고: 퀴즈 데이터가 없습니다! 블록만 생성합니다.');
-      generateDockBlocks();
-      return;
-    }
-
-    availableQuizzes = [...sourceData];
-    for (let i = availableQuizzes.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [availableQuizzes[i], availableQuizzes[j]] = [
-        availableQuizzes[j],
-        availableQuizzes[i],
-      ];
-    }
-  }
-
-  currentQuiz = availableQuizzes.pop();
-
-  document.getElementById('quiz-question').innerText = currentQuiz.q;
-  pinyinDisplay.innerText = currentQuiz.pinyin;
-
-  const optionsContainer = document.getElementById('quiz-options');
-  optionsContainer.innerHTML = '';
-
-  currentQuiz.options.forEach((opt) => {
-    const btn = document.createElement('button');
-    btn.className = 'option-btn';
-    btn.innerText = opt;
-    btn.onclick = () => {
-      const allBtns = optionsContainer.querySelectorAll('button');
-      allBtns.forEach((b) => (b.disabled = true));
-
-      if (synth.speaking) synth.cancel(); // 정답/오답 클릭 시 남은 음성 끄기
-
-      if (opt === currentQuiz.a) {
-        // (정답 처리 로직 유지)
-        playCorrectSound();
-        feedback.innerText = '정답입니다!';
-        feedback.style.color = '#00ff00';
-
-        if (!correctQuizzesThisRound.some((q) => q.q === currentQuiz.q)) {
-          correctQuizzesThisRound.push(currentQuiz);
-        }
-
-        setTimeout(() => {
-          modal.classList.remove('active');
-          generateDockBlocks();
-        }, 700);
-      } else {
-        // (오답 처리 로직)
-        playWrongSound();
-        feedback.innerText =
-          gameMode === 'hell'
-            ? '오답! 장애물 최대 6개 투하!'
-            : '오답! 장애물 1개 투하!';
-        feedback.style.color = '#ff3333';
-        currentCombo = 0;
-        linesClearedThisRound = 0;
-
-        // ★ 여기에 추가: 틀린 문장 기록하기 (중복 방지)
-        if (!wrongReviewList.some((q) => q.q === currentQuiz.q)) {
-          wrongReviewList.push(currentQuiz);
-        }
-
-        setTimeout(() => {
-          modal.classList.remove('active');
-          spawnObstacleStone(gameMode);
-          generateDockBlocks();
-        }, 1000);
-      }
-    };
-    optionsContainer.appendChild(btn);
-  });
-
-  modal.classList.add('active');
-  playQuizPopupSound();
-
-  // ★ 모달이 열리자마자 바로 음성 재생 ★
-  speakChineseTTS(currentQuiz.q);
-}
-
-// 힌트 버튼 기능
-function showHint() {
-  document.getElementById('hint-btn').style.display = 'none';
-  document.getElementById('quiz-pinyin').style.display = 'block';
+function emptyCells() {
+  const list = [];
+  for (let r = 0; r < BOARD_SIZE; r++) for (let c = 0; c < BOARD_SIZE; c++) if (board[r][c] === 0) list.push({ r, c });
+  return list;
 }
 
 function spawnObstacleStone(mode) {
-  let totalToSpawn = mode === 'hell' ? Math.floor(Math.random() * 6) + 1 : 1;
+  const total = mode === 'hell' ? Math.floor(Math.random() * 6) + 1 : 1;
   let spawned = 0;
-  while (spawned < totalToSpawn) {
-    let emptyCells = [];
-    for (let r = 0; r < BOARD_SIZE; r++) {
-      for (let c = 0; c < BOARD_SIZE; c++)
-        if (board[r][c] === 0) emptyCells.push({ r, c });
-    }
-    if (emptyCells.length === 0) break;
+  const newCells = [];
 
-    let clusterSize = Math.floor(Math.random() * (totalToSpawn - spawned)) + 1;
-    let startCell = emptyCells[Math.floor(Math.random() * emptyCells.length)];
-    let cluster = [startCell];
-    let visited = new Set();
-    visited.add(`${startCell.r},${startCell.c}`);
-    let queue = [startCell];
-
-    while (cluster.length < clusterSize && queue.length > 0) {
-      let curr = queue.shift();
-      let neighbors = [
-        { r: curr.r - 1, c: curr.c },
-        { r: curr.r + 1, c: curr.c },
-        { r: curr.r, c: curr.c - 1 },
-        { r: curr.r, c: curr.c + 1 },
+  while (spawned < total) {
+    const empties = emptyCells();
+    if (!empties.length) break;
+    const clusterSize = Math.floor(Math.random() * (total - spawned)) + 1;
+    const start = empties[Math.floor(Math.random() * empties.length)];
+    const cluster = [start];
+    const visited = new Set([`${start.r},${start.c}`]);
+    const queue = [start];
+    while (cluster.length < clusterSize && queue.length) {
+      const cur = queue.shift();
+      const nbs = [
+        { r: cur.r - 1, c: cur.c },
+        { r: cur.r + 1, c: cur.c },
+        { r: cur.r, c: cur.c - 1 },
+        { r: cur.r, c: cur.c + 1 },
       ].filter(
-        (n) =>
-          n.r >= 0 &&
-          n.r < BOARD_SIZE &&
-          n.c >= 0 &&
-          n.c < BOARD_SIZE &&
-          board[n.r][n.c] === 0 &&
-          !visited.has(`${n.r},${n.c}`),
+        (n) => n.r >= 0 && n.r < BOARD_SIZE && n.c >= 0 && n.c < BOARD_SIZE && board[n.r][n.c] === 0 && !visited.has(`${n.r},${n.c}`),
       );
-      neighbors.sort(() => Math.random() - 0.5);
-      for (let n of neighbors) {
+      shuffle(nbs);
+      for (const n of nbs) {
         visited.add(`${n.r},${n.c}`);
         cluster.push(n);
         queue.push(n);
         if (cluster.length >= clusterSize) break;
       }
     }
-    for (let cell of cluster) {
-      let durability = Math.floor(Math.random() * 2) + 2;
-      board[cell.r][cell.c] = 10 + durability;
+    for (const cell of cluster) {
+      board[cell.r][cell.c] = 10 + Math.floor(Math.random() * 2) + 2; // 내구도 2~3
+      newCells.push(cell);
       spawned++;
     }
   }
+
   renderBoard();
+  if (newCells.length) {
+    playObstacleSpawnSound();
+    shakeBoard(2);
+    newCells.forEach(({ r, c }) => animateOnce(cellEls[r][c], 'spawn-drop', 500));
+  }
 }
 
-function generateDockBlocks() {
-  const colorPool = [1, 2, 3].sort(() => Math.random() - 0.5);
-  let normalChance = 0;
+function spawnBonusBlockOnBoard() {
+  let hasBonus = false;
+  for (const row of board) if (row.includes(4)) hasBonus = true;
+  const empties = emptyCells();
+  if (hasBonus || !empties.length || Math.random() >= 0.25) return;
+  const cell = empties[Math.floor(Math.random() * empties.length)];
+  board[cell.r][cell.c] = 4;
+  renderBoard();
+  playBonusSpawnSound();
+  animateOnce(cellEls[cell.r][cell.c], 'spawn-drop', 500);
+}
+
+function animateOnce(el, cls, ms) {
+  el.classList.remove(cls);
+  // 다음 프레임에 붙여서 애니메이션 재시작 (강제 리플로우 없음)
+  requestAnimationFrame(() => {
+    el.classList.add(cls);
+    setTimeout(() => el.classList.remove(cls), ms);
+  });
+}
+
+// ==========================================
+// ★ 대기 블록(독) 생성 ★
+// ==========================================
+function blockChances() {
+  let normalChance = gameMode === 'hell' ? 0.15 : 0.05;
   let hardChance = 0;
-
-  if (gameMode === 'normal') {
-    normalChance = 0.05;
-    hardChance = 0.0;
-    if (currentCombo >= 11) {
-      let increase = (currentCombo - 10) * 0.01;
-      normalChance += increase;
-      hardChance += increase;
-    }
-  } else if (gameMode === 'hell') {
-    normalChance = 0.15;
-    hardChance = 0.0;
-    if (currentCombo >= 11) {
-      let increase = (currentCombo - 10) * 0.01;
-      normalChance += increase;
-      hardChance += increase;
-    }
+  if (currentCombo >= 11) {
+    const inc = (currentCombo - 10) * 0.01;
+    normalChance += inc;
+    hardChance += inc;
   }
-
-  if (normalChance + hardChance > 1.0) {
-    let over = normalChance + hardChance - 1.0;
+  if (normalChance + hardChance > 1) {
+    const over = normalChance + hardChance - 1;
     normalChance -= over / 2;
     hardChance -= over / 2;
   }
+  return { normalChance, hardChance };
+}
+function randomMatrix() {
+  const { normalChance, hardChance } = blockChances();
+  const rand = Math.random();
+  const pool = rand < hardChance ? HARD_BLOCKS : rand < hardChance + normalChance ? NORMAL_BLOCKS : GOOD_BLOCKS;
+  return pool[Math.floor(Math.random() * pool.length)].map((row) => row.slice());
+}
 
+function generateDockBlocks() {
+  const colors = shuffle([1, 2, 3]);
   for (let i = 0; i < 3; i++) {
-    const rand = Math.random();
-    let poolToUse =
-      rand < hardChance
-        ? HARD_BLOCKS
-        : rand < hardChance + normalChance
-          ? NORMAL_BLOCKS
-          : GOOD_BLOCKS;
-    const blockMatrix = JSON.parse(
-      JSON.stringify(poolToUse[Math.floor(Math.random() * poolToUse.length)]),
-    );
-    currentDockBlocks[i] = { matrix: blockMatrix, colorVal: colorPool[i] };
+    currentDockBlocks[i] = { matrix: randomMatrix(), colorVal: colors[i] };
     renderDockSlot(i);
   }
+  spawnBonusBlockOnBoard();
   checkGameOverCondition();
 }
 
-function renderDockSlot(slotIndex) {
-  const slotEl = document.getElementById(`slot-${slotIndex}`);
-  slotEl.innerHTML = '';
-  const blockData = currentDockBlocks[slotIndex];
-  if (!blockData) return;
-  const table = document.createElement('div');
-  table.className = 'preview-matrix';
-  blockData.matrix.forEach((row) => {
-    const rowEl = document.createElement('div');
-    rowEl.className = 'preview-row';
-    row.forEach((cell) => {
-      const cellEl = document.createElement('div');
-      cellEl.className = 'preview-cell';
-      if (cell === 1) cellEl.classList.add(`color-${blockData.colorVal}`);
-      rowEl.appendChild(cellEl);
-    });
-    table.appendChild(rowEl);
-  });
-  slotEl.appendChild(table);
-}
-
-function setupTouchEvents() {
-  const dockSlots = document.querySelectorAll('.dock-slot');
-  const overlay = document.getElementById('drag-overlay');
-
-  function updateDragPosition(clientX, clientY) {
-    if (!isDragging) return { topLeftX: 0, topLeftY: 0 };
-    const overlayRect = overlay.getBoundingClientRect();
-    const centerX = clientX;
-    const centerY = clientY - 40;
-    overlay.style.left = `${centerX - overlayRect.width / 2}px`;
-    overlay.style.top = `${centerY - overlayRect.height / 2}px`;
-    const topLeftX = centerX - overlayRect.width / 2 + 20;
-    const topLeftY = centerY - overlayRect.height / 2 + 20;
-    drawShadow(topLeftX, topLeftY);
-    return { topLeftX, topLeftY };
-  }
-
-  function handleStart(clientX, clientY, slot) {
-    const slotIndex = parseInt(slot.getAttribute('data-slot'));
-    if (!currentDockBlocks[slotIndex]) return;
-    activeDragIndex = slotIndex;
-    isDragging = true;
-    createDragOverlayStyle(currentDockBlocks[slotIndex]);
-    overlay.style.display = 'block';
-    requestAnimationFrame(() => updateDragPosition(clientX, clientY));
-  }
-
-  function handleMove(clientX, clientY) {
-    updateDragPosition(clientX, clientY);
-  }
-
-  function handleEnd(clientX, clientY) {
-    if (!isDragging) return;
-    const { topLeftX, topLeftY } = updateDragPosition(clientX, clientY);
-    isDragging = false;
-    overlay.style.display = 'none';
-    clearShadow();
-
-    const targetCell = findBoardCellAtPos(topLeftX, topLeftY);
-    if (targetCell) {
-      const { r, c } = targetCell;
-      const blockData = currentDockBlocks[activeDragIndex];
-      if (canPlaceBlock(r, c, blockData.matrix)) {
-        placeBlock(r, c, blockData.matrix, blockData.colorVal);
-        currentDockBlocks[activeDragIndex] = null;
-        renderDockSlot(activeDragIndex);
-
-        clearFullLines(() => {
-          if (currentDockBlocks.every((b) => b === null)) {
-            if (linesClearedThisRound === 0) currentCombo = 0;
-            linesClearedThisRound = 0;
-            setTimeout(() => triggerNewQuiz(), 300);
-          } else checkGameOverCondition();
-        });
-      }
+function renderDockSlot(i) {
+  const slot = $(`slot-${i}`);
+  slot.innerHTML = '';
+  slot.classList.remove('dragging', 'unplaceable');
+  const data = currentDockBlocks[i];
+  if (!data) return;
+  const m = document.createElement('div');
+  m.className = 'preview-matrix';
+  m.style.gridTemplateColumns = `repeat(${data.matrix[0].length}, var(--pc))`;
+  for (const row of data.matrix) {
+    for (const v of row) {
+      const c = document.createElement('div');
+      c.className = 'preview-cell' + (v ? ` color-${data.colorVal}` : '');
+      if (!v) c.style.visibility = 'hidden';
+      m.appendChild(c);
     }
-    activeDragIndex = null;
   }
-
-  dockSlots.forEach((slot) => {
-    slot.addEventListener(
-      'touchstart',
-      (e) => handleStart(e.touches[0].clientX, e.touches[0].clientY, slot),
-      { passive: false },
-    );
-    slot.addEventListener('mousedown', (e) =>
-      handleStart(e.clientX, e.clientY, slot),
-    );
-  });
-  window.addEventListener(
-    'touchmove',
-    (e) => {
-      if (isDragging) {
-        e.preventDefault();
-        handleMove(e.touches[0].clientX, e.touches[0].clientY);
-      }
-    },
-    { passive: false },
-  );
-  window.addEventListener('mousemove', (e) => handleMove(e.clientX, e.clientY));
-  window.addEventListener('touchend', (e) =>
-    handleEnd(e.changedTouches[0].clientX, e.changedTouches[0].clientY),
-  );
-  window.addEventListener('mouseup', (e) => handleEnd(e.clientX, e.clientY));
+  slot.appendChild(m);
 }
 
-function clearShadow() {
-  document
-    .querySelectorAll('.cell-shadow')
-    .forEach((el) => el.classList.remove('cell-shadow'));
+// ==========================================
+// ★ 드래그 앤 드롭 (Pointer Events — 한 번만 등록) ★
+// ==========================================
+let drag = null;
+let dragRAF = 0;
+
+function buildDragOverlay(data) {
+  overlayEl.innerHTML = '';
+  const wrap = document.createElement('div');
+  wrap.className = 'drag-block';
+  wrap.style.gridTemplateColumns = `repeat(${data.matrix[0].length}, var(--cell))`;
+  for (const row of data.matrix) {
+    for (const v of row) {
+      const c = document.createElement('div');
+      c.className = 'drag-cell' + (v ? ` color-${data.colorVal}` : '');
+      if (!v) c.style.visibility = 'hidden';
+      wrap.appendChild(c);
+    }
+  }
+  overlayEl.appendChild(wrap);
 }
 
-function drawShadow(topLeftX, topLeftY) {
+function onSlotPointerDown(e) {
+  if (drag || isGameLocked || isBombActive || isGameOver) return;
+  if (e.button !== undefined && e.button > 0) return;
+  const i = Number(e.currentTarget.dataset.slot);
+  const data = currentDockBlocks[i];
+  if (!data) return;
+  e.preventDefault();
+  ensureAudio();
+
+  const rect = gridEl.getBoundingClientRect();
+  const { cell, gap } = layoutInfo;
+  const step = cell + gap;
+  const cols = data.matrix[0].length;
+  const rows = data.matrix.length;
+  const w = cols * cell + (cols - 1) * gap;
+  const h = rows * cell + (rows - 1) * gap;
+  // 손가락에 가리지 않도록 터치는 블록을 위로 띄움
+  const lift = e.pointerType === 'mouse' ? 0 : h / 2 + Math.max(40, cell * 0.9);
+
+  drag = { i, data, rect, step, w, h, lift, x: e.clientX, y: e.clientY, pid: e.pointerId, key: '', target: null };
+  buildDragOverlay(data);
+  overlayEl.style.display = 'block';
+  e.currentTarget.classList.add('dragging');
+  dragFrame();
+}
+
+function onPointerMove(e) {
+  if (!drag || e.pointerId !== drag.pid) return;
+  drag.x = e.clientX;
+  drag.y = e.clientY;
+  if (!dragRAF) dragRAF = requestAnimationFrame(dragFrame);
+}
+
+function dragFrame() {
+  dragRAF = 0;
+  if (!drag) return;
+  const left = drag.x - drag.w / 2;
+  const top = drag.y - drag.lift - drag.h / 2;
+  overlayEl.style.transform = `translate3d(${left}px, ${top}px, 0)`;
+
+  const c = Math.round((left - drag.rect.left) / drag.step);
+  const r = Math.round((top - drag.rect.top) / drag.step);
+  const ok = canPlaceBlock(r, c, drag.data.matrix);
+  const key = ok ? `${r},${c}` : '';
+  if (key !== drag.key) {
+    drag.key = key;
+    drag.target = ok ? { r, c } : null;
+    if (ok) drawShadow(r, c, drag.data);
+    else clearShadow();
+  }
+}
+
+function onPointerUp(e) {
+  if (!drag || e.pointerId !== drag.pid) return;
+  if (e.type === 'pointerup') {
+    drag.x = e.clientX;
+    drag.y = e.clientY;
+    dragFrame();
+  }
+  const { i, data, target } = drag;
+  cancelAnimationFrame(dragRAF);
+  dragRAF = 0;
+  drag = null;
+  overlayEl.style.display = 'none';
   clearShadow();
-  if (activeDragIndex === null) return;
-  const targetCell = findBoardCellAtPos(topLeftX, topLeftY);
-  if (!targetCell) return;
-  const { r, c } = targetCell;
-  const blockData = currentDockBlocks[activeDragIndex];
-  if (canPlaceBlock(r, c, blockData.matrix)) {
-    for (let row = 0; row < blockData.matrix.length; row++) {
-      for (let col = 0; col < blockData.matrix[row].length; col++) {
-        if (blockData.matrix[row][col] === 1) {
-          const cellEl = document.getElementById(`cell-${r + row}-${c + col}`);
-          if (cellEl) cellEl.classList.add('cell-shadow');
-        }
-      }
-    }
+  $(`slot-${i}`).classList.remove('dragging');
+
+  if (e.type === 'pointerup' && target && canPlaceBlock(target.r, target.c, data.matrix)) {
+    placeBlock(target.r, target.c, data.matrix, data.colorVal);
+    currentDockBlocks[i] = null;
+    renderDockSlot(i);
+    playPlaceSound();
+    clearFullLines(afterPlacement);
   }
 }
 
-function createDragOverlayStyle(blockData) {
-  const overlay = document.getElementById('drag-overlay');
-  overlay.innerHTML = '';
-  const container = document.createElement('div');
-  container.className = 'drag-block-table';
-  blockData.matrix.forEach((row) => {
-    const rowEl = document.createElement('div');
-    rowEl.className = 'drag-row';
-    row.forEach((cell) => {
-      const cellEl = document.createElement('div');
-      cellEl.className = 'drag-cell';
-      cellEl.style.width = '40px';
-      cellEl.style.height = '40px';
-      if (cell === 1) cellEl.classList.add(`color-${blockData.colorVal}`);
-      cellEl.style.opacity = cell === 1 ? '1' : '0';
-      rowEl.appendChild(cellEl);
-    });
-    container.appendChild(rowEl);
-  });
-  overlay.appendChild(container);
+function afterPlacement() {
+  if (currentDockBlocks.every((b) => b === null)) {
+    if (linesClearedThisRound === 0) {
+      currentCombo = 0;
+      setDoubleScore(false);
+      updateHUD();
+    }
+    linesClearedThisRound = 0;
+    isGameLocked = true;
+    later(triggerNewQuiz, 350);
+  } else {
+    checkGameOverCondition();
+  }
 }
 
-function findBoardCellAtPos(x, y) {
-  const boardEl = document.getElementById('grid-board');
-  const rect = boardEl.getBoundingClientRect();
-  if (
-    x < rect.left - 20 ||
-    x > rect.right + 20 ||
-    y < rect.top - 20 ||
-    y > rect.bottom + 20
-  )
-    return null;
-  const cellW = rect.width / BOARD_SIZE;
-  const cellH = rect.height / BOARD_SIZE;
-  let c = Math.floor((x - rect.left) / cellW);
-  let r = Math.floor((y - rect.top) / cellH);
-  c = Math.max(0, Math.min(c, BOARD_SIZE - 1));
-  r = Math.max(0, Math.min(r, BOARD_SIZE - 1));
-  return { r, c };
+document.querySelectorAll('.dock-slot').forEach((slot) => slot.addEventListener('pointerdown', onSlotPointerDown));
+window.addEventListener('pointermove', onPointerMove, { passive: true });
+window.addEventListener('pointerup', onPointerUp);
+window.addEventListener('pointercancel', onPointerUp);
+// iOS 사파리/크롬: 드래그 중 화면 스크롤 방지
+document.addEventListener('touchmove', (e) => drag && e.preventDefault(), { passive: false });
+
+// 그림자 + 지워질 줄 미리보기
+let shadowEls = [];
+let clearEls = [];
+function clearShadow() {
+  for (const el of shadowEls) el.classList.remove('cell-shadow', 'ghost-1', 'ghost-2', 'ghost-3');
+  for (const el of clearEls) el.classList.remove('cell-will-clear');
+  shadowEls = [];
+  clearEls = [];
+}
+function drawShadow(r, c, data) {
+  clearShadow();
+  const m = data.matrix;
+  const inPiece = (rr, cc) => {
+    const pr = rr - r;
+    const pc = cc - c;
+    return pr >= 0 && pr < m.length && pc >= 0 && pc < m[0].length && m[pr][pc] === 1;
+  };
+  for (let pr = 0; pr < m.length; pr++) {
+    for (let pc = 0; pc < m[pr].length; pc++) {
+      if (!m[pr][pc]) continue;
+      const el = cellEls[r + pr][c + pc];
+      el.classList.add('cell-shadow', `ghost-${data.colorVal}`);
+      shadowEls.push(el);
+    }
+  }
+  const filled = (rr, cc) => board[rr][cc] !== 0 || inPiece(rr, cc);
+  const marks = new Set();
+  for (let rr = r; rr < r + m.length; rr++) {
+    let full = true;
+    for (let cc = 0; cc < BOARD_SIZE && full; cc++) full = filled(rr, cc);
+    if (full) for (let cc = 0; cc < BOARD_SIZE; cc++) marks.add(cellEls[rr][cc]);
+  }
+  for (let cc = c; cc < c + m[0].length; cc++) {
+    let full = true;
+    for (let rr = 0; rr < BOARD_SIZE && full; rr++) full = filled(rr, cc);
+    if (full) for (let rr = 0; rr < BOARD_SIZE; rr++) marks.add(cellEls[rr][cc]);
+  }
+  marks.forEach((el) => {
+    el.classList.add('cell-will-clear');
+    clearEls.push(el);
+  });
+}
+
+function redrawShadowIfDragging() {
+  if (!drag) return;
+  drag.key = '';
+  dragFrame();
 }
 
 function canPlaceBlock(startR, startC, matrix) {
   for (let r = 0; r < matrix.length; r++) {
     for (let c = 0; c < matrix[r].length; c++) {
-      if (matrix[r][c] === 1) {
-        const tr = startR + r;
-        const tc = startC + c;
-        if (
-          tr < 0 ||
-          tr >= BOARD_SIZE ||
-          tc < 0 ||
-          tc >= BOARD_SIZE ||
-          board[tr][tc] !== 0
-        )
-          return false;
-      }
+      if (matrix[r][c] !== 1) continue;
+      const tr = startR + r;
+      const tc = startC + c;
+      if (tr < 0 || tr >= BOARD_SIZE || tc < 0 || tc >= BOARD_SIZE || board[tr][tc] !== 0) return false;
     }
   }
   return true;
@@ -1031,531 +1048,661 @@ function placeBlock(startR, startC, matrix, colorVal) {
   renderBoard();
 }
 
+// ==========================================
+// ★ 줄 제거 (상태는 즉시, 연출은 뒤에) ★
+// ==========================================
 function clearFullLines(onComplete) {
-  let rowsToClear = [];
-  let colsToClear = [];
-  for (let r = 0; r < BOARD_SIZE; r++)
-    if (board[r].every((cell) => cell !== 0)) rowsToClear.push(r);
+  const rows = [];
+  const cols = [];
+  for (let r = 0; r < BOARD_SIZE; r++) if (board[r].every((v) => v !== 0)) rows.push(r);
   for (let c = 0; c < BOARD_SIZE; c++) {
-    let isFull = true;
-    for (let r = 0; r < BOARD_SIZE; r++) {
-      if (board[r][c] === 0) {
-        isFull = false;
-        break;
-      }
-    }
-    if (isFull) colsToClear.push(c);
+    let full = true;
+    for (let r = 0; r < BOARD_SIZE; r++) if (board[r][c] === 0) { full = false; break; }
+    if (full) cols.push(c);
   }
-  const totalCleared = rowsToClear.length + colsToClear.length;
-
-  if (totalCleared > 0) {
-    playClearSound(); // ★ 블록 제거 타격감 사운드 재생
-
-    let previousCombo = currentCombo;
-    currentCombo += totalCleared;
-    maxComboThisRound = Math.max(maxComboThisRound, currentCombo);
-    linesClearedThisRound += totalCleared;
-
-    let shakeIntensity = 1 + currentCombo * 0.5;
-    document.documentElement.style.setProperty(
-      '--shake-int',
-      Math.min(shakeIntensity, 6),
-    );
-    const gameContainer = document.getElementById('game-container');
-    gameContainer.classList.remove('shake-active');
-    void gameContainer.offsetWidth;
-    gameContainer.classList.add('shake-active');
-    setTimeout(() => gameContainer.classList.remove('shake-active'), 400);
-
-    if (currentCombo >= 10) {
-      const flash = document.getElementById('light-flash-overlay');
-      flash.classList.remove('flash-active');
-      void flash.offsetWidth;
-      flash.classList.add('flash-active');
-      setTimeout(() => flash.classList.remove('flash-active'), 600);
-    }
-
-    let normalCells = [];
-    let damagedObstacles = [];
-    let hitCells = new Set();
-    rowsToClear.forEach((r) => {
-      for (let c = 0; c < BOARD_SIZE; c++) hitCells.add(`${r},${c}`);
-    });
-    colsToClear.forEach((c) => {
-      for (let r = 0; r < BOARD_SIZE; r++) hitCells.add(`${r},${c}`);
-    });
-    hitCells.forEach((pos) => {
-      let [r, c] = pos.split(',').map(Number);
-      if (board[r][c] >= 11) damagedObstacles.push({ r, c });
-      else if (board[r][c] > 0) normalCells.push({ r, c });
-    });
-
-    normalCells.forEach((pos) =>
-      document
-        .getElementById(`cell-${pos.r}-${pos.c}`)
-        .classList.add('cell-explode'),
-    );
-    damagedObstacles.forEach((pos) =>
-      document
-        .getElementById(`cell-${pos.r}-${pos.c}`)
-        .classList.add('cell-damage'),
-    );
-
-    setTimeout(() => {
-      normalCells.forEach((pos) => {
-        board[pos.r][pos.c] = 0;
-      });
-      damagedObstacles.forEach((pos) => {
-        board[pos.r][pos.c] -= 1;
-        if (board[pos.r][pos.c] <= 10) board[pos.r][pos.c] = 0;
-      });
-
-      const baseScore = gameMode === 'hell' ? 300 : 150;
-      let earnedScore = totalCleared * baseScore * currentCombo;
-      score += earnedScore;
-
-      showComboEffect(totalCleared, currentCombo);
-
-      // ★ 다중 라인 제거 시 연속 아르페지오 사운드 재생 ★
-      playSequentialComboSounds(previousCombo + 1, totalCleared);
-
-      let isAllClear = true;
-      for (let r = 0; r < BOARD_SIZE; r++) {
-        for (let c = 0; c < BOARD_SIZE; c++) {
-          if (board[r][c] > 0) {
-            isAllClear = false;
-            break;
-          }
-        }
-        if (!isAllClear) break;
-      }
-      if (isAllClear) {
-        score += 1000;
-        showAllClearEffect();
-      }
-
-      renderBoard();
-      if (onComplete) onComplete();
-    }, 300);
-  } else {
-    if (onComplete) onComplete();
+  const total = rows.length + cols.length;
+  if (!total) {
+    onComplete && onComplete();
+    return;
   }
+
+  playClearSound();
+  const prevCombo = currentCombo;
+  currentCombo += total;
+  maxComboThisRound = Math.max(maxComboThisRound, currentCombo);
+  linesClearedThisRound += total;
+
+  const hit = new Set();
+  rows.forEach((r) => { for (let c = 0; c < BOARD_SIZE; c++) hit.add(r * BOARD_SIZE + c); });
+  cols.forEach((c) => { for (let r = 0; r < BOARD_SIZE; r++) hit.add(r * BOARD_SIZE + c); });
+
+  // 1) 상태 즉시 반영 (연출 중 다음 블록을 놓아도 계산이 꼬이지 않음)
+  hit.forEach((idx) => {
+    const r = Math.floor(idx / BOARD_SIZE);
+    const c = idx % BOARD_SIZE;
+    const v = board[r][c];
+    const el = cellEls[r][c];
+    if (v >= 11) {
+      board[r][c] = v - 1 <= 10 ? 0 : v - 1;
+      el.classList.add('cell-damage');
+    } else if (v > 0) {
+      if (v === 4) nextQuizIsBonus = true;
+      board[r][c] = 0;
+      el.classList.add('cell-explode');
+    }
+  });
+
+  let earned = total * (gameMode === 'hell' ? 300 : 150) * currentCombo;
+  if (isDoubleScoreActive) earned *= 2;
+  score += earned;
+
+  const allClear = board.every((row) => row.every((v) => v === 0));
+  if (allClear) score += 1000;
+
+  // 2) 연출
+  shakeBoard(Math.min(1 + currentCombo * 0.5, 6));
+  if (currentCombo >= 10) flashScreen('#ffffff', 0.85);
+  showComboEffect(total, currentCombo);
+  playSequentialComboSounds(prevCombo + 1, total);
+  if (allClear) showAllClearEffect();
+  updateHUD();
+
+  // 3) 애니메이션 끝난 뒤 칸 다시 그리기
+  later(() => {
+    hit.forEach((idx) => {
+      const r = Math.floor(idx / BOARD_SIZE);
+      const c = idx % BOARD_SIZE;
+      cellEls[r][c].classList.remove('cell-explode', 'cell-damage');
+      rendered[r][c] = -1;
+    });
+    renderBoard();
+    redrawShadowIfDragging();
+  }, 330);
+
+  onComplete && onComplete();
 }
 
-function showComboEffect(linesCleared, finalCombo) {
-  const comboEl = document.getElementById('combo-display');
-  let bonusText =
-    linesCleared > 1
-      ? `<span class="bonus-lines">+${linesCleared} LINES!</span>`
-      : '';
-  comboEl.innerHTML = `${bonusText}${finalCombo} COMBO!`;
-  comboEl.classList.remove('show');
-  void comboEl.offsetWidth;
-  comboEl.classList.add('show');
-  setTimeout(() => {
-    comboEl.classList.remove('show');
-  }, 1200);
+// Web Animations API (클래스 토글/리플로우 없이 실행)
+function shakeBoard(intensity = 1) {
+  const d = 1.5 * intensity;
+  boardWrap.animate(
+    [
+      { transform: 'translate(0,0)' },
+      { transform: `translate(${-d}px, ${d}px) rotate(${-0.3 * intensity}deg)` },
+      { transform: `translate(${d}px, ${-d}px) rotate(${0.3 * intensity}deg)` },
+      { transform: `translate(${-d}px, ${-d}px)` },
+      { transform: `translate(${d}px, ${d}px)` },
+      { transform: 'translate(0,0)' },
+    ],
+    { duration: 300, easing: 'ease-out' },
+  );
 }
-
+function flashScreen(color, peak = 0.8) {
+  const f = $('flash-overlay');
+  f.style.background = color;
+  f.animate([{ opacity: 0 }, { opacity: peak, offset: 0.1 }, { opacity: 0 }], { duration: 600, easing: 'ease-out' });
+}
+function popText(el, ms = 1200) {
+  el.getAnimations().forEach((a) => a.cancel());
+  el.animate(
+    [
+      { transform: 'translate(-50%,-50%) scale(0.3)', opacity: 0 },
+      { transform: 'translate(-50%,-50%) scale(1.15)', opacity: 1, offset: 0.18 },
+      { transform: 'translate(-50%,-50%) scale(1)', opacity: 1, offset: 0.8 },
+      { transform: 'translate(-50%,-60%) scale(0.95)', opacity: 0 },
+    ],
+    { duration: ms, easing: 'ease-out' },
+  );
+}
+function showComboEffect(lines, combo) {
+  const el = $('combo-display');
+  const bonus = lines > 1 ? `<span class="bonus-lines">+${lines} LINES!</span>` : '';
+  const buff = isDoubleScoreActive ? '<span class="sub">x2 버프 유지 중!</span>' : '';
+  el.innerHTML = `${bonus}${combo} COMBO!${buff}`;
+  popText(el, 1200);
+}
 function showAllClearEffect() {
-  const acEl = document.getElementById('all-clear-display');
-  acEl.classList.remove('show');
-  void acEl.offsetWidth;
-  acEl.classList.add('show');
-  const flash = document.getElementById('light-flash-overlay');
-  flash.classList.remove('flash-active');
-  void flash.offsetWidth;
-  flash.classList.add('flash-active');
-  setTimeout(() => {
-    acEl.classList.remove('show');
-  }, 2000);
+  popText($('all-clear-display'), 2000);
+  flashScreen('#fff3b0', 0.9);
+}
+function floatText(text, cls, ms) {
+  const el = document.createElement('div');
+  el.className = `float-text ${cls}`;
+  el.textContent = text;
+  document.body.appendChild(el);
+  el.animate(
+    [
+      { transform: 'translate(-50%, 0) scale(0.5)', opacity: 0 },
+      { transform: 'translate(-50%, -20px) scale(1.2)', opacity: 1, offset: 0.15 },
+      { transform: 'translate(-50%, -30px) scale(1.15)', opacity: 1, offset: 0.7 },
+      { transform: 'translate(-50%, -90px) scale(0.85)', opacity: 0 },
+    ],
+    { duration: ms, easing: 'ease-out' },
+  ).onfinish = () => el.remove();
 }
 
 // ==========================================
-// ★ 게임 오버 조건 체크 및 가시성 개선 연출 ★
+// ★ 게임 오버 / 구조(아이템으로 살리기) ★
 // ==========================================
 function checkGameOverCondition() {
-  let activeBlocksCount = 0;
-  let placeableBlocksCount = 0;
+  if (isGameOver) return;
+  let active = 0;
+  let placeable = 0;
   for (let i = 0; i < 3; i++) {
-    const blockData = currentDockBlocks[i];
-    if (blockData) {
-      activeBlocksCount++;
-      let canBePlacedAnywhere = false;
-      for (let r = 0; r < BOARD_SIZE; r++) {
-        for (let c = 0; c < BOARD_SIZE; c++) {
-          if (canPlaceBlock(r, c, blockData.matrix)) {
-            canBePlacedAnywhere = true;
-            break;
-          }
-        }
-        if (canBePlacedAnywhere) break;
+    const data = currentDockBlocks[i];
+    if (!data) continue;
+    active++;
+    let can = false;
+    for (let r = 0; r < BOARD_SIZE && !can; r++) for (let c = 0; c < BOARD_SIZE && !can; c++) can = canPlaceBlock(r, c, data.matrix);
+    $(`slot-${i}`).classList.toggle('unplaceable', !can);
+    if (can) placeable++;
+  }
+
+  if (active > 0 && placeable === 0) {
+    if (playerItems.bomb > 0 || playerItems.reroll > 0) {
+      showBoardBanner('놓을 곳이 없어요! 💣·🔄 아이템을 써 보세요', '포기', () => gameOver(), 'danger');
+    } else {
+      gameOver();
+    }
+  } else if (!isBombActive) {
+    hideBoardBanner();
+  }
+}
+
+function gameOver() {
+  if (isGameOver) return;
+  isGameOver = true;
+  isBombActive = false;
+  hideBoardBanner();
+  growAIRivals(gameMode, gameLevel);
+  boardWrap.classList.add('dimmed');
+
+  const el = $('combo-display');
+  el.innerHTML = '<span style="color:#ff4d6d">배치 불가!</span><span class="sub">NO SPACE</span>';
+  popText(el, 1300);
+
+  later(() => {
+    playBGM('leaderboard');
+    const prevBest = getBestScore(gameMode, gameLevel);
+    $('go-score').textContent = score.toLocaleString();
+    $('go-combo').textContent = maxComboThisRound;
+    $('go-mode').textContent = gameLevel.replace('hsk', 'HSK ');
+    $('go-mode-label').textContent = gameMode === 'hell' ? 'HELL 🔥' : 'NORMAL';
+    $('go-record').hidden = !(score > prevBest && score > 0);
+    $('nickname-input').value = store.get('hskblock_last_nick', '');
+    $('nickname-error').hidden = true;
+    $('game-over-modal').classList.add('active');
+  }, 1300);
+}
+
+function skipRanking() {
+  $('game-over-modal').classList.remove('active');
+  returnToLobby();
+}
+$('nickname-input').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') saveRanking();
+});
+$('nickname-input').addEventListener('input', () => ($('nickname-error').hidden = true));
+
+// 보드 하단 배너
+let bannerAction = null;
+function showBoardBanner(text, btnText, action, tone = '') {
+  $('board-banner-text').textContent = text;
+  const btn = $('board-banner-btn');
+  btn.textContent = btnText;
+  bannerAction = action;
+  const b = $('board-banner');
+  b.className = `board-banner ${tone}`;
+  b.hidden = false;
+}
+function hideBoardBanner() {
+  $('board-banner').hidden = true;
+  bannerAction = null;
+}
+$('board-banner-btn').addEventListener('click', () => bannerAction && bannerAction());
+
+// 나가기 확인
+let lockBeforeExit = false;
+function openExitConfirm() {
+  if (isGameOver) return returnToLobby();
+  lockBeforeExit = isGameLocked;
+  isGameLocked = true;
+  $('exit-modal').classList.add('active');
+}
+function closeExitConfirm() {
+  $('exit-modal').classList.remove('active');
+  isGameLocked = lockBeforeExit;
+}
+function exitToLobby() {
+  $('exit-modal').classList.remove('active');
+  isGameOver = true;
+  gameSession++; // 진행 중인 예약 작업 무효화
+  if ('speechSynthesis' in window) speechSynthesis.cancel();
+  returnToLobby();
+}
+
+// ==========================================
+// ★ 퀴즈 ★
+// ==========================================
+function setQuizWord(text, isSentence = false) {
+  const el = $('quiz-question');
+  el.classList.toggle('text', isSentence);
+  el.innerHTML = text;
+  if (!isSentence) {
+    const len = String(text).replace(/<[^>]*>/g, '').length;
+    const size = len <= 2 ? 64 : len <= 4 ? 52 : len <= 7 ? 40 : len <= 11 ? 30 : 24;
+    el.style.setProperty('--qsize', `${size}px`);
+  }
+}
+
+function triggerNewQuiz() {
+  if (isGameOver || quizOpen) return;
+  if (nextQuizIsBonus) {
+    nextQuizIsBonus = false;
+    if (window.BONUS_QUIZ_DATA && window.BONUS_QUIZ_DATA.length) return triggerBonusQuiz();
+  }
+  quizOpen = true;
+  isGameLocked = true;
+
+  const levelData = (window.QUIZ_DATA && window.QUIZ_DATA[gameLevel]) || [];
+  if (!availableQuizzes.length && levelData.length) availableQuizzes = shuffle([...levelData]);
+  currentQuiz = availableQuizzes.length
+    ? availableQuizzes.pop()
+    : { q: '데이터 없음', pinyin: '-', a: '확인', options: ['확인', '준비중', '테스트'] };
+
+  $('quiz-tag').textContent = '관문을 통과하라!';
+  $('quiz-tag').className = 'quiz-tag';
+  setQuizWord(currentQuiz.q);
+  $('quiz-pinyin').textContent = currentQuiz.pinyin;
+  $('quiz-pinyin').hidden = true;
+  $('hint-btn').hidden = false;
+  $('quiz-feedback').textContent = '';
+
+  const box = $('quiz-options');
+  box.innerHTML = '';
+  shuffle([...currentQuiz.options]).forEach((opt, idx) => {
+    const btn = document.createElement('button');
+    btn.className = 'opt';
+    btn.innerHTML = `<span class="num">${idx + 1}</span><span class="txt">${escapeHTML(opt)}</span>`;
+    btn.dataset.value = opt;
+    btn.onclick = () => answerQuiz(btn, opt);
+    box.appendChild(btn);
+  });
+
+  $('quiz-modal').classList.add('active');
+  playQuizPopupSound();
+}
+
+function answerQuiz(btn, opt) {
+  const quiz = currentQuiz;
+  const buttons = [...$('quiz-options').querySelectorAll('button')];
+  buttons.forEach((b) => (b.disabled = true));
+  const correct = opt === quiz.a;
+  const rightBtn = buttons.find((b) => b.dataset.value === quiz.a);
+  if (rightBtn) rightBtn.classList.add('correct');
+
+  if (correct) {
+    playCorrectSound();
+    later(() => {
+      $('quiz-modal').classList.remove('active');
+      showGiantHanzi(quiz.q, quiz.pinyin, quiz.a, true);
+    }, 280);
+    later(() => {
+      quizOpen = false;
+      if (isGameOver) return;
+      generateDockBlocks();
+      isGameLocked = false;
+    }, 2000);
+  } else {
+    btn.classList.add('wrong');
+    playWrongSound();
+    score = Math.max(0, score - 500);
+    currentCombo = 0;
+    linesClearedThisRound = 0;
+    setDoubleScore(false);
+    updateHUD();
+    // 정답을 잠깐 보여준 뒤 닫기
+    later(() => {
+      $('quiz-modal').classList.remove('active');
+      floatText('-500', 'penalty', 2000);
+      showGiantHanzi(quiz.q, quiz.pinyin, quiz.a, false);
+    }, 900);
+    later(() => {
+      quizOpen = false;
+      if (isGameOver) return;
+      spawnObstacleStone(gameMode);
+      generateDockBlocks();
+      isGameLocked = false;
+    }, 2600);
+  }
+}
+
+function showHint() {
+  $('hint-btn').hidden = true;
+  $('quiz-pinyin').hidden = false;
+}
+
+function triggerBonusQuiz() {
+  quizOpen = true;
+  isGameLocked = true;
+  const data = window.BONUS_QUIZ_DATA;
+  const bq = data[Math.floor(Math.random() * data.length)];
+
+  $('quiz-tag').textContent = '🎁 보너스 찬스! (틀려도 페널티 없음)';
+  $('quiz-tag').className = 'quiz-tag gold';
+  setQuizWord(escapeHTML(bq.q), true);
+  $('hint-btn').hidden = true;
+  $('quiz-pinyin').hidden = true;
+  $('quiz-feedback').textContent = '';
+
+  const box = $('quiz-options');
+  box.innerHTML = '';
+  shuffle([...bq.options]).forEach((opt, idx) => {
+    const btn = document.createElement('button');
+    btn.className = 'opt';
+    btn.innerHTML = `<span class="num">${idx + 1}</span><span class="txt">${escapeHTML(opt)}</span>`;
+    btn.dataset.value = opt;
+    btn.onclick = () => {
+      const buttons = [...box.querySelectorAll('button')];
+      buttons.forEach((b) => (b.disabled = true));
+      const right = buttons.find((b) => b.dataset.value === bq.a);
+      if (right) right.classList.add('correct');
+      const fb = $('quiz-feedback');
+      if (opt === bq.a) {
+        playCorrectSound();
+        fb.textContent = '정답입니다! 아이템을 고르세요!';
+        fb.style.color = 'var(--gold)';
+        later(() => {
+          $('quiz-modal').classList.remove('active');
+          $('item-selection-modal').classList.add('active');
+        }, 1000);
+      } else {
+        btn.classList.add('wrong');
+        playWrongSound();
+        fb.textContent = '아쉽게도 틀렸어요. (페널티 없음)';
+        fb.style.color = 'var(--danger)';
+        later(() => {
+          $('quiz-modal').classList.remove('active');
+          quizOpen = false;
+          if (isGameOver) return;
+          generateDockBlocks();
+          isGameLocked = false;
+        }, 1400);
       }
-      if (canBePlacedAnywhere) placeableBlocksCount++;
+    };
+    box.appendChild(btn);
+  });
+
+  $('quiz-modal').classList.add('active');
+  playQuizPopupSound();
+}
+
+function selectItem(type) {
+  playerItems[type]++;
+  updateInventoryUI();
+  $('item-selection-modal').classList.remove('active');
+  quizOpen = false;
+  generateDockBlocks();
+  isGameLocked = false;
+}
+
+// 키보드 1·2·3 으로 보기 선택, Esc 로 폭탄 취소/창 닫기
+window.addEventListener('keydown', (e) => {
+  if ($('quiz-modal').classList.contains('active')) {
+    const n = { Digit1: 0, Digit2: 1, Digit3: 2, Numpad1: 0, Numpad2: 1, Numpad3: 2 }[e.code];
+    if (n !== undefined) {
+      const btn = $('quiz-options').querySelectorAll('button')[n];
+      if (btn && !btn.disabled) btn.click();
+    }
+    return;
+  }
+  if (e.key === 'Escape') {
+    if (isBombActive) cancelBomb();
+    else if ($('exit-modal').classList.contains('active')) closeExitConfirm();
+    else if ($('hsk-modal').classList.contains('active')) closeHSKModal();
+  }
+});
+
+// 정답/오답 후 큰 한자 + 병음 + 뜻
+function showGiantHanzi(hanzi, pinyin, meaning, isCorrect) {
+  const overlay = document.createElement('div');
+  overlay.className = 'giant-hanzi-overlay';
+  const color = isCorrect ? '#ffd54a' : '#ff4d6d';
+  const glow = isCorrect ? 'rgba(46,230,200,.8)' : 'rgba(255,0,60,.8)';
+  const len = String(hanzi).replace(/<[^>]*>/g, '').length;
+  const vw = Math.min(window.innerWidth, 900);
+  const size = Math.min(150, Math.floor((vw * 0.86) / Math.max(1, len)));
+  overlay.innerHTML = `
+    <div class="giant-hanzi-text" style="--gsize:${size}px;color:${color};text-shadow:0 0 24px ${glow},0 4px 0 rgba(0,0,0,.4)">${hanzi}</div>
+    <div class="giant-pinyin-text">${escapeHTML(pinyin || '')}</div>
+    <div class="giant-meaning">${isCorrect ? '⭕' : '정답:'} ${escapeHTML(meaning || '')}</div>`;
+  document.body.appendChild(overlay);
+  overlay.animate(
+    [
+      { transform: 'translate(-50%,-50%) scale(0.4)', opacity: 0 },
+      { transform: 'translate(-50%,-50%) scale(1.06)', opacity: 1, offset: 0.12 },
+      { transform: 'translate(-50%,-50%) scale(1)', opacity: 1, offset: 0.85 },
+      { transform: 'translate(-50%,-50%) scale(0.9)', opacity: 0 },
+    ],
+    { duration: isCorrect ? 1650 : 1650, easing: 'ease-out' },
+  ).onfinish = () => overlay.remove();
+  speakChinese(hanzi);
+}
+
+// ==========================================
+// ★ 아이템 ★
+// ==========================================
+function updateInventoryUI() {
+  $('item-bomb-cnt').textContent = playerItems.bomb;
+  $('item-reroll-cnt').textContent = playerItems.reroll;
+  $('item-double-cnt').textContent = playerItems.doubleScore;
+  $('item-bomb').disabled = playerItems.bomb <= 0 && !isBombActive;
+  $('item-reroll').disabled = playerItems.reroll <= 0;
+  $('item-double').disabled = playerItems.doubleScore <= 0 || isDoubleScoreActive;
+  $('item-bomb').classList.toggle('armed', isBombActive);
+}
+
+function setDoubleScore(on) {
+  isDoubleScoreActive = on;
+  boardWrap.classList.toggle('double-on', on);
+  updateInventoryUI();
+}
+
+// [폭탄] 마우스: 올려서 조준 → 클릭 / 터치: 탭해서 조준 → 같은 칸 한 번 더 탭
+let bombPreview = null;
+function useBomb() {
+  if (isBombActive) return cancelBomb();
+  if (playerItems.bomb <= 0 || isGameLocked || isGameOver) return;
+  isBombActive = true;
+  bombPreview = null;
+  updateInventoryUI();
+  showBoardBanner('💣 터뜨릴 칸을 고르세요 (터치: 두 번 탭)', '취소', cancelBomb);
+}
+function cancelBomb() {
+  isBombActive = false;
+  bombPreview = null;
+  clearBombTarget();
+  updateInventoryUI();
+  hideBoardBanner();
+  checkGameOverCondition();
+}
+function clearBombTarget() {
+  gridEl.querySelectorAll('.bomb-target').forEach((el) => el.classList.remove('bomb-target'));
+}
+function markBombTarget(r, c) {
+  clearBombTarget();
+  for (let i = r - 1; i <= r + 1; i++)
+    for (let j = c - 1; j <= c + 1; j++)
+      if (i >= 0 && i < BOARD_SIZE && j >= 0 && j < BOARD_SIZE) cellEls[i][j].classList.add('bomb-target');
+}
+function cellFromEvent(e) {
+  const el = e.target.closest('.grid-cell');
+  return el ? { r: Number(el.dataset.r), c: Number(el.dataset.c) } : null;
+}
+gridEl.addEventListener('pointerover', (e) => {
+  if (!isBombActive || e.pointerType !== 'mouse') return;
+  const cell = cellFromEvent(e);
+  if (cell) markBombTarget(cell.r, cell.c);
+});
+gridEl.addEventListener('pointerleave', () => isBombActive && !bombPreview && clearBombTarget());
+gridEl.addEventListener('click', (e) => {
+  if (!isBombActive) return;
+  const cell = cellFromEvent(e);
+  if (!cell) return;
+  const isMouse = e.pointerType === 'mouse' || (e.pointerType === undefined && matchMedia('(hover: hover)').matches);
+  if (isMouse || (bombPreview && bombPreview.r === cell.r && bombPreview.c === cell.c)) {
+    detonateBomb(cell.r, cell.c);
+  } else {
+    bombPreview = cell;
+    markBombTarget(cell.r, cell.c);
+  }
+});
+
+function detonateBomb(r, c) {
+  isBombActive = false;
+  bombPreview = null;
+  playerItems.bomb--;
+  clearBombTarget();
+  hideBoardBanner();
+  updateInventoryUI();
+
+  playBombSound();
+  shakeBoard(6);
+  flashScreen('#ff4500', 0.6);
+
+  let destroyed = 0;
+  for (let i = r - 1; i <= r + 1; i++) {
+    for (let j = c - 1; j <= c + 1; j++) {
+      if (i < 0 || i >= BOARD_SIZE || j < 0 || j >= BOARD_SIZE) continue;
+      const v = board[i][j];
+      if (!v) continue;
+      if (v === 4) nextQuizIsBonus = true;
+      if (v < 11) destroyed++;
+      board[i][j] = 0;
+      cellEls[i][j].classList.add('bomb-explode');
     }
   }
+  score += destroyed * 20;
+  const allClear = board.every((row) => row.every((v) => v === 0));
+  if (allClear) {
+    score += 1000;
+    showAllClearEffect();
+  }
+  updateHUD();
 
-  // 블록은 남아있는데 더 이상 둘 곳이 없는 경우 (게임 오버 트래킹)
-  if (activeBlocksCount > 0 && placeableBlocksCount === 0) {
-    // AI 점수 성장 작동
-    growAIRivals(gameMode);
+  later(() => {
+    gridEl.querySelectorAll('.bomb-explode').forEach((el) => {
+      el.classList.remove('bomb-explode');
+      rendered[Number(el.dataset.r)][Number(el.dataset.c)] = -1;
+    });
+    renderBoard();
+    checkGameOverCondition();
+  }, 400);
+}
 
-    // 1. 보드판 전체를 흐리게 만들고 타격감 차단 처리 효과 (CSS 필터 활용)
-    const boardWrapper = document.getElementById('board-wrapper');
-    if (boardWrapper) {
-      boardWrapper.style.transition = 'all 1s ease';
-      boardWrapper.style.filter = 'grayscale(0.6) brightness(0.5)';
+// [리롤] 남은 블록을 일반 규칙으로 새로 뽑음 (놓을 수 있는 블록이 나오도록 몇 번 재시도)
+function useReroll() {
+  if (playerItems.reroll <= 0 || isGameLocked || isGameOver || isBombActive) return;
+  playerItems.reroll--;
+  updateInventoryUI();
+  playRerollSound();
+  document.querySelectorAll('.dock-slot').forEach((s) => animateOnce(s, 'reroll-anim', 500));
+
+  later(() => {
+    const colors = shuffle([1, 2, 3]);
+    const slots = [0, 1, 2].filter((i) => currentDockBlocks[i] !== null);
+    for (let attempt = 0; attempt < 12; attempt++) {
+      slots.forEach((i) => (currentDockBlocks[i] = { matrix: randomMatrix(), colorVal: colors[i] }));
+      const anyFits = slots.some((i) => {
+        for (let r = 0; r < BOARD_SIZE; r++) for (let c = 0; c < BOARD_SIZE; c++) if (canPlaceBlock(r, c, currentDockBlocks[i].matrix)) return true;
+        return false;
+      });
+      if (anyFits) break;
     }
-
-    // 2. 콤보 표시 자리에 "배치 불가" 경고 메시지를 띄워 안내 강화
-    const comboEl = document.getElementById('combo-display');
-    comboEl.innerHTML = `<span style="color: #ff003c; text-shadow: 0 0 15px #ff003c; font-size: 26pt; font-weight: 900;">배치 불가!<br><span style="font-size: 16pt; color: #fff;">NO SPACE</span></span>`;
-    comboEl.classList.add('show');
-
-    // 3. 바로 팝업을 띄우지 않고, 유저가 상황을 인지할 수 있도록 1.2초의 여유 시간을 준 뒤 모달 띄우기
-    setTimeout(() => {
-      playBGM('leaderboard');
-      comboEl.classList.remove('show');
-      // ★ 게임 오버 모달 대신 복습 모달을 먼저 실행 ★
-      showReviewModal();
-    }, 1200);
-  }
+    slots.forEach(renderDockSlot);
+    checkGameOverCondition();
+  }, 250);
 }
+
+// [점수 2배] 콤보가 끊길 때까지 유지
+function useDoubleScore() {
+  if (playerItems.doubleScore <= 0 || isDoubleScoreActive || isGameLocked || isGameOver) return;
+  playerItems.doubleScore--;
+  setDoubleScore(true);
+  updateHUD();
+  playBuffSound();
+  floatText('⭐ SCORE x2 BUFF! ⭐', 'buff', 1500);
+}
+
 // ==========================================
-// ★ Web Audio API 사운드 효과 (전체 볼륨 하향 최적화) ★
+// ★ 크롬 안내 배너 / 앱 설치 / 오프라인 캐시 ★
 // ==========================================
-const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-const scaleFrequencies = [
-  261.63, 293.66, 329.63, 349.23, 392.0, 440.0, 493.88, 523.25,
-];
+(function browserSupport() {
+  const B = window.__BROWSER || {};
+  const banner = $('browser-banner');
+  let dismissed = false;
+  try {
+    dismissed = sessionStorage.getItem('hskblock_bb') === '1';
+  } catch (e) {}
 
-function playQuizPopupSound() {
-  if (audioCtx.state === 'suspended') audioCtx.resume();
-  const osc = audioCtx.createOscillator();
-  const gain = audioCtx.createGain();
-  osc.type = 'sine';
-  osc.frequency.setValueAtTime(400, audioCtx.currentTime);
-  osc.frequency.exponentialRampToValueAtTime(800, audioCtx.currentTime + 0.15);
-  gain.gain.setValueAtTime(0.3, audioCtx.currentTime); // 1.0 -> 0.3
-  gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.3);
-  osc.connect(gain);
-  gain.connect(audioCtx.destination);
-  osc.start();
-  osc.stop(audioCtx.currentTime + 0.3);
-}
-
-function playClearSound() {
-  if (audioCtx.state === 'suspended') audioCtx.resume();
-  const osc = audioCtx.createOscillator();
-  const gain = audioCtx.createGain();
-  osc.type = 'square';
-  osc.frequency.setValueAtTime(150, audioCtx.currentTime);
-  osc.frequency.exponentialRampToValueAtTime(40, audioCtx.currentTime + 0.15);
-  gain.gain.setValueAtTime(0.4, audioCtx.currentTime); // 1.2 -> 0.4
-  gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.2);
-  osc.connect(gain);
-  gain.connect(audioCtx.destination);
-  osc.start();
-  osc.stop(audioCtx.currentTime + 0.2);
-}
-
-function playSequentialComboSounds(startCombo, linesCleared) {
-  if (audioCtx.state === 'suspended') audioCtx.resume();
-  for (let i = 0; i < linesCleared; i++) {
-    const currentComboCount = startCombo + i;
-    const scaleIndex = (currentComboCount - 1) % 8;
-    const octaveMultiplier = Math.pow(
-      2,
-      Math.floor((currentComboCount - 1) / 8),
-    );
-    const freq = scaleFrequencies[scaleIndex] * octaveMultiplier;
-
-    const oscillator = audioCtx.createOscillator();
-    const gainNode = audioCtx.createGain();
-    oscillator.type = 'sawtooth';
-
-    const startTime = audioCtx.currentTime + i * 0.15;
-    const stopTime = startTime + 0.4;
-
-    oscillator.frequency.setValueAtTime(freq, startTime);
-    gainNode.gain.setValueAtTime(0.0, audioCtx.currentTime);
-    gainNode.gain.setValueAtTime(0.3, startTime); // 1.0 -> 0.3
-    gainNode.gain.exponentialRampToValueAtTime(0.001, stopTime);
-
-    oscillator.connect(gainNode);
-    gainNode.connect(audioCtx.destination);
-    oscillator.start(startTime);
-    oscillator.stop(stopTime);
-  }
-}
-
-function playCorrectSound() {
-  if (audioCtx.state === 'suspended') audioCtx.resume();
-  const osc = audioCtx.createOscillator();
-  const gain = audioCtx.createGain();
-  osc.type = 'triangle';
-  osc.frequency.setValueAtTime(440, audioCtx.currentTime);
-  osc.frequency.setValueAtTime(554.37, audioCtx.currentTime + 0.1);
-  osc.frequency.setValueAtTime(659.25, audioCtx.currentTime + 0.2);
-  gain.gain.setValueAtTime(0.4, audioCtx.currentTime); // 1.0 -> 0.4
-  gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.4);
-  osc.connect(gain);
-  gain.connect(audioCtx.destination);
-  osc.start();
-  osc.stop(audioCtx.currentTime + 0.4);
-}
-
-function playWrongSound() {
-  if (audioCtx.state === 'suspended') audioCtx.resume();
-  const osc = audioCtx.createOscillator();
-  const gain = audioCtx.createGain();
-  osc.type = 'sawtooth';
-  osc.frequency.setValueAtTime(200, audioCtx.currentTime);
-  osc.frequency.exponentialRampToValueAtTime(50, audioCtx.currentTime + 0.4);
-  gain.gain.setValueAtTime(0.4, audioCtx.currentTime); // 1.0 -> 0.4
-  gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.4);
-  osc.connect(gain);
-  gain.connect(audioCtx.destination);
-  osc.start();
-  osc.stop(audioCtx.currentTime + 0.4);
-}
-
-function playBombSound() {
-  if (audioCtx.state === 'suspended') audioCtx.resume();
-  const osc = audioCtx.createOscillator();
-  const gain = audioCtx.createGain();
-  osc.type = 'sawtooth';
-  osc.frequency.setValueAtTime(100, audioCtx.currentTime);
-  osc.frequency.exponentialRampToValueAtTime(10, audioCtx.currentTime + 0.5);
-  gain.gain.setValueAtTime(0.6, audioCtx.currentTime); // 2.0 -> 0.6
-  gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.5);
-  osc.connect(gain);
-  gain.connect(audioCtx.destination);
-  osc.start();
-  osc.stop(audioCtx.currentTime + 0.5);
-}
-
-function playBonusSpawnSound() {
-  if (audioCtx.state === 'suspended') audioCtx.resume();
-  const osc = audioCtx.createOscillator();
-  const gain = audioCtx.createGain();
-  osc.type = 'sine';
-  osc.frequency.setValueAtTime(600, audioCtx.currentTime);
-  osc.frequency.linearRampToValueAtTime(1200, audioCtx.currentTime + 0.3);
-  gain.gain.setValueAtTime(0.2, audioCtx.currentTime); // 0.6 -> 0.2
-  gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.4);
-  osc.connect(gain);
-  gain.connect(audioCtx.destination);
-  osc.start();
-  osc.stop(audioCtx.currentTime + 0.4);
-}
-
-function playObstacleSpawnSound() {
-  if (audioCtx.state === 'suspended') audioCtx.resume();
-  const osc = audioCtx.createOscillator();
-  const gain = audioCtx.createGain();
-  osc.type = 'square';
-  osc.frequency.setValueAtTime(100, audioCtx.currentTime);
-  osc.frequency.exponentialRampToValueAtTime(30, audioCtx.currentTime + 0.4);
-  gain.gain.setValueAtTime(0.4, audioCtx.currentTime); // 1.2 -> 0.4
-  gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.4);
-  osc.connect(gain);
-  gain.connect(audioCtx.destination);
-  osc.start();
-  osc.stop(audioCtx.currentTime + 0.4);
-}
-
-function playRerollSound() {
-  if (audioCtx.state === 'suspended') audioCtx.resume();
-  const osc = audioCtx.createOscillator();
-  const gain = audioCtx.createGain();
-  osc.type = 'sine';
-  osc.frequency.setValueAtTime(800, audioCtx.currentTime);
-  osc.frequency.exponentialRampToValueAtTime(100, audioCtx.currentTime + 0.3);
-  gain.gain.setValueAtTime(0.3, audioCtx.currentTime); // 0.8 -> 0.3
-  gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.3);
-  osc.connect(gain);
-  gain.connect(audioCtx.destination);
-  osc.start();
-  osc.stop(audioCtx.currentTime + 0.3);
-}
-
-function playBuffSound() {
-  if (audioCtx.state === 'suspended') audioCtx.resume();
-  const osc = audioCtx.createOscillator();
-  const gain = audioCtx.createGain();
-  osc.type = 'square';
-  osc.frequency.setValueAtTime(300, audioCtx.currentTime);
-  osc.frequency.setValueAtTime(400, audioCtx.currentTime + 0.1);
-  osc.frequency.setValueAtTime(600, audioCtx.currentTime + 0.2);
-  osc.frequency.setValueAtTime(800, audioCtx.currentTime + 0.3);
-  gain.gain.setValueAtTime(0.2, audioCtx.currentTime); // 0.6 -> 0.2
-  gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.6);
-  osc.connect(gain);
-  gain.connect(audioCtx.destination);
-  osc.start();
-  osc.stop(audioCtx.currentTime + 0.6);
-}
-// ==========================================
-// ★ 복습 시스템 및 랭킹 전환 ★
-// ==========================================
-function showReviewModal() {
-  const reviewModal = document.getElementById('review-modal');
-  const listContainer = document.getElementById('review-list');
-  listContainer.innerHTML = ''; // 기존 목록 초기화
-
-  // ==========================================
-  // 🟢 1. 맞힌 문장 렌더링
-  // ==========================================
-  if (
-    typeof correctQuizzesThisRound !== 'undefined' &&
-    correctQuizzesThisRound.length > 0
-  ) {
-    const correctTitle = document.createElement('h4');
-    correctTitle.innerHTML = '🟢 맞힌 문장';
-    correctTitle.style.color = '#a8ff78';
-    correctTitle.style.marginTop = '10px';
-    correctTitle.style.marginBottom = '10px';
-    listContainer.appendChild(correctTitle);
-
-    correctQuizzesThisRound.forEach((item) => {
-      const div = document.createElement('div');
-      div.className = 'review-item';
-      div.style.background = 'rgba(0, 255, 204, 0.1)';
-      div.style.border = '1px solid #00ffcc';
-      div.style.padding = '12px';
-      div.style.marginBottom = '10px';
-      div.style.borderRadius = '8px';
-      div.style.position = 'relative';
-      div.style.paddingRight = '60px'; // 우측 버튼 공간 확보
-
-      div.innerHTML = `
-        <div style="font-size: 15pt; font-weight: bold; color: #fff;">${item.q}</div>
-        <div style="font-size: 11pt; color: #ff00ff; font-style: italic; margin-top: 4px;">${item.pinyin}</div>
-        <div style="font-size: 12pt; color: #00ffcc; margin-top: 4px;">${item.a}</div>
-        <button class="review-tts-btn" onclick="speakChineseTTS('${item.q}')">🔊</button>
-      `;
-      listContainer.appendChild(div);
-    });
+  if (!B.isChrome && !B.standalone && !dismissed) {
+    const openBtn = $('bb-open');
+    const sub = $('bb-sub');
+    if (B.isWeb && B.isAndroid) {
+      openBtn.onclick = () => {
+        location.href = `intent://${location.host}${location.pathname}${location.search}#Intent;scheme=${location.protocol.replace(':', '')};package=com.android.chrome;end`;
+      };
+    } else if (B.isWeb && B.isIOS) {
+      openBtn.onclick = () => {
+        location.href = location.href.replace(/^https:/, 'googlechromes:').replace(/^http:/, 'googlechrome:');
+      };
+      sub.textContent = 'Chrome 앱이 설치되어 있으면 바로 열려요.';
+    } else {
+      // 데스크탑 또는 파일로 직접 연 경우: 주소 복사 안내
+      openBtn.textContent = B.isWeb ? '주소 복사' : '실행 방법';
+      sub.textContent = B.isWeb
+        ? '주소를 복사해 크롬 주소창에 붙여 넣어 주세요.'
+        : '폴더의 PLAY_Chrome 실행 파일로 열면 항상 크롬에서 열려요.';
+      openBtn.onclick = () => {
+        if (B.isWeb && navigator.clipboard) {
+          navigator.clipboard.writeText(location.href).then(() => toast('주소를 복사했어요. 크롬에 붙여 넣으세요.'));
+        } else {
+          toast('PLAY_Chrome_Windows.bat / PLAY_Chrome_Mac.command 를 실행하세요', 3000);
+        }
+      };
+    }
+    $('bb-close').onclick = () => {
+      banner.hidden = true;
+      try {
+        sessionStorage.setItem('hskblock_bb', '1');
+      } catch (e) {}
+    };
+    banner.hidden = false;
   }
 
-  // ==========================================
-  // 🔴 2. 틀린 문장 렌더링 (빨간색 테마)
-  // ==========================================
-  if (typeof wrongReviewList !== 'undefined' && wrongReviewList.length > 0) {
-    const wrongTitle = document.createElement('h4');
-    wrongTitle.innerHTML = '🔴 다시 볼 문장 (오답)';
-    wrongTitle.style.color = '#ff4d4d';
-    wrongTitle.style.marginTop = '20px';
-    wrongTitle.style.marginBottom = '10px';
-    listContainer.appendChild(wrongTitle);
+  // 홈 화면 설치 (https 로 올렸을 때 크롬에서 동작)
+  let deferredPrompt = null;
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    deferredPrompt = e;
+    $('install-btn').hidden = false;
+  });
+  $('install-btn').addEventListener('click', async () => {
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    await deferredPrompt.userChoice;
+    deferredPrompt = null;
+    $('install-btn').hidden = true;
+  });
+  window.addEventListener('appinstalled', () => toast('홈 화면에 설치됐어요!'));
+  if (B.isIOS && B.isWeb && !B.standalone) $('ios-install-tip').hidden = false;
 
-    wrongReviewList.forEach((item) => {
-      const div = document.createElement('div');
-      div.className = 'review-item';
-      div.style.background = 'rgba(255, 51, 51, 0.1)';
-      div.style.border = '1px solid #ff4d4d';
-      div.style.padding = '12px';
-      div.style.marginBottom = '10px';
-      div.style.borderRadius = '8px';
-      div.style.position = 'relative';
-      div.style.paddingRight = '60px'; // 우측 버튼 공간 확보
-
-      div.innerHTML = `
-        <div style="font-size: 15pt; font-weight: bold; color: #ff4d4d;">${item.q}</div>
-        <div style="font-size: 11pt; color: #ff9999; font-style: italic; margin-top: 4px;">${item.pinyin}</div>
-        <div style="font-size: 12pt; color: #ffe6e6; margin-top: 4px;">${item.a}</div>
-        <button class="review-tts-btn" onclick="speakChineseTTS('${item.q}')" style="border-color: #ff4d4d; color: #ff4d4d; background: rgba(255, 51, 51, 0.1);">🔊</button>
-      `;
-      listContainer.appendChild(div);
-    });
+  if ('serviceWorker' in navigator && B.isWeb) {
+    window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
   }
+})();
 
-  // 데이터가 아예 없는 경우
-  if (correctQuizzesThisRound.length === 0 && wrongReviewList.length === 0) {
-    listContainer.innerHTML =
-      '<p style="color: #ccc; text-align: center; margin-top: 40px; font-size: 14pt;">학습한 내용이 없습니다.</p>';
-  }
-
-  reviewModal.classList.add('active');
-}
-
-function goToGameOverModal() {
-  document.getElementById('review-modal').classList.remove('active');
-  const gameOverModal = document.getElementById('game-over-modal');
-  const statsText = document.getElementById('game-over-stats');
-
-  statsText.innerHTML = `
-    모드: <strong style="color:#ff00ff;">${gameMode.toUpperCase()}</strong><br>
-    최종 점수: <strong style="color:#00ffcc;">${score}</strong> 점<br>
-    최대 콤보: <strong style="color:#ffaf7b;">${maxComboThisRound}</strong> Combo<br>
-    맞힌 문장: <strong style="color:#a8ff78;">${correctQuizzesThisRound.length}</strong> 개<br>
-    틀린 문장: <strong style="color:#ff4d4d;">${wrongReviewList.length}</strong> 개
-  `;
-  gameOverModal.classList.add('active');
-}
-
-// ==========================================
-// ★ 랭킹 등록 건너뛰기 및 로비 복귀 ★
-// ==========================================
-function skipRankingAndGoLobby() {
-  document.getElementById('game-over-modal').classList.remove('active');
-  document.getElementById('game-container').style.display = 'none';
-  document.getElementById('lobby-screen').style.display = 'flex';
-  document.getElementById('nickname-input').value = '';
-  playBGM('intro');
-}
-// ==========================================
-// ★ 1. 플레이 중 '로비로 돌아가기' 버튼 모달 띄우기
-// ==========================================
-function showGiveUpModal() {
-  document.getElementById('giveup-modal').classList.add('active');
-}
-
-// ==========================================
-// ★ 2. '로비로 돌아가기' 예/아니오 결과 처리
-// ==========================================
-function processGiveUp(isYes) {
-  // 모달 닫기
-  document.getElementById('giveup-modal').classList.remove('active');
-
-  if (!isYes) return; // '아니오'를 누르면 그대로 게임 진행
-
-  // '예'를 누른 경우: 게임 즉시 중단
-  isDragging = false;
-  document.getElementById('drag-overlay').style.display = 'none';
-  clearShadow();
-
-  // 게임 오버 연출 (보드판 흐리게)
-  const boardWrapper = document.getElementById('board-wrapper');
-  if (boardWrapper) {
-    boardWrapper.style.transition = 'all 1s ease';
-    boardWrapper.style.filter = 'grayscale(0.6) brightness(0.5)';
-  }
-
-  // BGM을 리더보드용으로 교체하고 AI 점수 업데이트
-  growAIRivals(gameMode);
-  playBGM('leaderboard');
-
-  // 곧바로 복습 모달 띄우기 (지금까지 맞힌 내용만 표시됨)
-  showReviewModal();
-}
-
-// ==========================================
-// ★ 3. 랭킹 등록 건너뛰고 바로 로비로 복귀하기
-// ==========================================
-function skipRankingAndGoLobby() {
-  // 열려있는 모달 모두 닫기
-  document.getElementById('game-over-modal').classList.remove('active');
-  document.getElementById('review-modal').classList.remove('active');
-
-  // 게임 화면 숨기고 로비 화면 띄우기
-  document.getElementById('game-container').style.display = 'none';
-  document.getElementById('lobby-screen').style.display = 'flex';
-
-  // 닉네임 입력칸 초기화
-  document.getElementById('nickname-input').value = '';
-
-  // 로비 BGM 재생
-  playBGM('intro');
-}
+// 초기 UI
+updateSoundUI();
+updateVoiceChip();
+layout();

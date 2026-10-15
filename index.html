@@ -4,358 +4,191 @@
     <meta charset="UTF-8" />
     <meta
       name="viewport"
-      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+      content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"
     />
-    <title>진담 중국어 블록 퍼즐</title>
+    <title>JD CHINESE · HSK 블록퍼즐</title>
+    <meta name="description" content="HSK 단어 퀴즈와 블록 퍼즐을 함께 즐기는 중국어 학습 게임" />
+
+    <!-- 앱 아이콘 / 홈 화면 설치 -->
+    <link rel="icon" type="image/svg+xml" href="icons/icon.svg" />
+    <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png" />
+    <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+    <link rel="manifest" href="manifest.webmanifest" />
+    <meta name="theme-color" content="#0f0b2e" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="HSK블록" />
+
+    <!-- ★ 크롬 유도: 카카오톡·네이버·인스타 등 인앱 브라우저면 크롬으로 다시 열기 ★ -->
+    <script>
+      (function () {
+        var ua = navigator.userAgent || '';
+        var isAndroid = /Android/i.test(ua);
+        var isIOS =
+          /iPhone|iPad|iPod/i.test(ua) ||
+          (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+        var inApp =
+          /KAKAOTALK|NAVER\(|NAVER|Instagram|FBAN|FBAV|Line\/|DaumApps|everytimeApp|BAND\/|; wv\)/i.test(ua);
+        var brands = (navigator.userAgentData && navigator.userAgentData.brands) || [];
+        var hasChromeBrand = brands.some(function (b) {
+          return b.brand === 'Google Chrome';
+        });
+        var isChrome = isIOS
+          ? /CriOS/i.test(ua)
+          : hasChromeBrand ||
+            (/Chrome\/\d+/.test(ua) &&
+              !/Edg|OPR|SamsungBrowser|Whale|YaBrowser|Firefox/i.test(ua) &&
+              !inApp);
+        var standalone =
+          (window.matchMedia && matchMedia('(display-mode: standalone)').matches) ||
+          navigator.standalone === true;
+        var isWeb = /^https?:$/.test(location.protocol);
+        var noRedirect = /[?&]nochrome=1/.test(location.search);
+
+        window.__BROWSER = {
+          isAndroid: isAndroid,
+          isIOS: isIOS,
+          inApp: inApp,
+          isChrome: isChrome,
+          standalone: standalone,
+          isWeb: isWeb,
+        };
+
+        // 안드로이드 인앱 브라우저 → 크롬 앱으로 바로 다시 열기
+        if (isWeb && isAndroid && inApp && !noRedirect) {
+          var sep = location.search ? '&' : '?';
+          var fallback = location.href + sep + 'nochrome=1';
+          location.href =
+            'intent://' + location.host + location.pathname + location.search +
+            '#Intent;scheme=' + location.protocol.replace(':', '') +
+            ';package=com.android.chrome;S.browser_fallback_url=' +
+            encodeURIComponent(fallback) + ';end';
+          return;
+        }
+        // iOS 카카오톡 인앱 → 외부 브라우저로 열기
+        if (isWeb && isIOS && /KAKAOTALK/i.test(ua) && !noRedirect) {
+          location.href = 'kakaotalk://web/openExternal?url=' + encodeURIComponent(location.href);
+        }
+      })();
+    </script>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700;900&family=Noto+Sans+SC:wght@500;700&display=swap"
+      rel="stylesheet"
+    />
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
-    <div id="light-flash-overlay"></div>
+    <div id="flash-overlay"></div>
 
-    <div id="start-screen">
-      <h1 class="blink-text">화면을 터치하거나<br />아무 키나 누르세요</h1>
-    </div>
-
-    <div id="lobby-screen" style="display: none">
-      <h1 class="lobby-title">진담 중국어</h1>
-      <p class="lobby-subtitle">중국어 블록 퍼즐</p>
-
-      <div class="level-select-container">
-        <button id="btn-lv1" class="level-btn active" onclick="selectLevel(1)">
-          LEVEL 1<br /><span style="font-size: 9pt; font-weight: normal"
-            >기초 단어/문장</span
-          >
-        </button>
-        <button id="btn-lv2" class="level-btn" onclick="selectLevel(2)">
-          LEVEL 2<br /><span style="font-size: 9pt; font-weight: normal"
-            >문장</span
-          >
-        </button>
+    <!-- 크롬 안내 배너 -->
+    <div id="browser-banner" hidden>
+      <div class="bb-text">
+        <strong>크롬(Chrome)에서 가장 잘 동작해요</strong>
+        <span id="bb-sub">음성·드래그가 안정적이에요.</span>
       </div>
-
-      <div class="mode-buttons">
-        <button class="mode-btn normal-btn" onclick="startGame('normal')">
-          NORMAL MODE<br />
-        </button>
-        <button class="mode-btn hell-btn" onclick="startGame('hell')">
-          HELL MODE<br />
-        </button>
-        <button class="mode-btn rank-btn" onclick="showRankingScreen('normal')">
-          🏆 명예의 전당 (랭킹)
-        </button>
+      <div class="bb-actions">
+        <button id="bb-open" class="bb-btn primary">크롬으로 열기</button>
+        <button id="bb-close" class="bb-btn">닫기</button>
       </div>
     </div>
 
-    <div id="ranking-screen" style="display: none">
-      <h2
-        style="
-          color: #00ffcc;
-          margin-bottom: 20px;
-          font-size: 24pt;
-          text-shadow: 0 0 10px #00ffcc;
-        "
-      >
-        명예의 전당
-      </h2>
-      <div class="ranking-tabs">
-        <button
-          id="tab-normal"
-          class="tab-btn active"
-          onclick="renderRankingList('normal')"
-        >
-          NORMAL
-        </button>
-        <button
-          id="tab-hell"
-          class="tab-btn"
-          onclick="renderRankingList('hell')"
-        >
-          HELL 🔥
-        </button>
-      </div>
-      <div class="ranking-list-container">
-        <ul id="ranking-list"></ul>
-      </div>
-      <button
-        class="option-btn"
-        onclick="returnToLobby()"
-        style="
-          margin-top: 20px;
-          background: linear-gradient(135deg, #4facfe, #00f2fe);
-        "
-      >
-        로비로 돌아가기
-      </button>
-    </div>
+    <!-- 1. 시작 화면 -->
+    <section id="start-screen" class="screen active">
+      <img class="start-logo" src="icons/icon.svg" alt="" width="120" height="120" />
+      <h1 class="start-title">JD CHINESE</h1>
+      <p class="start-sub">HSK BLOCK PUZZLE</p>
+      <p class="blink-text">화면을 터치하거나 아무 키나 누르세요</p>
+    </section>
 
-    <div id="game-container" style="display: none">
-      <header>
-        <div class="score-box">SCORE: <span id="score">0</span></div>
-        <div
-          style="
-            display: flex;
-            flex-direction: column;
-            align-items: flex-end;
-            gap: 8px;
-          "
-        >
-          <div class="title-box">
-            모드: <span id="mode-display">NORMAL</span>
+    <!-- 2. 로비 -->
+    <section id="lobby-screen" class="screen">
+      <div class="lobby-inner">
+        <div class="lobby-head">
+          <img src="icons/icon.svg" alt="" width="64" height="64" />
+          <div>
+            <h1 class="lobby-title">JD CHINESE</h1>
+            <p class="lobby-subtitle">HSK BLOCK PUZZLE</p>
           </div>
-          <!-- ★ 포기하기 버튼 추가 ★ -->
-          <button class="give-up-btn" onclick="showGiveUpModal()">
-            🏠 로비로 돌아가기
+        </div>
+
+        <div class="mode-cards">
+          <button class="mode-card normal" onclick="openHSKModal('normal')">
+            <span class="mc-name">NORMAL</span>
+            <span class="mc-desc">오답 시 방해블록 1개 · 줄당 150점</span>
+            <span class="mc-arrow">›</span>
+          </button>
+          <button class="mode-card hell" onclick="openHSKModal('hell')">
+            <span class="mc-name">HELL 🔥</span>
+            <span class="mc-desc">오답 시 방해블록 1~6개 · 줄당 300점</span>
+            <span class="mc-arrow">›</span>
+          </button>
+          <button class="mode-card rank" onclick="showRankingScreen('normal', 'hsk4')">
+            <span class="mc-name">🏆 명예의 전당</span>
+            <span class="mc-desc">모드·급수별 랭킹 보기</span>
+            <span class="mc-arrow">›</span>
           </button>
         </div>
+
+        <div class="lobby-footer">
+          <button id="voice-chip" class="pill" title="눌러서 음성 테스트">🔊 음성 확인 중…</button>
+          <button id="lobby-sound" class="pill" onclick="cycleSound()">🔊 소리 켬</button>
+          <button id="install-btn" class="pill accent" hidden>📲 앱으로 설치</button>
+        </div>
+        <p id="ios-install-tip" class="tiny-tip" hidden>
+          아이폰/아이패드: Chrome·Safari의 공유 버튼 → <b>홈 화면에 추가</b>를 누르면 앱 아이콘이 생겨요.
+        </p>
+      </div>
+    </section>
+
+    <!-- 3. 랭킹 -->
+    <section id="ranking-screen" class="screen">
+      <div class="ranking-inner">
+        <h2 class="screen-title">🏆 명예의 전당</h2>
+        <div class="seg" role="tablist">
+          <button id="tab-normal" class="seg-btn active" onclick="changeRankMode('normal')">NORMAL</button>
+          <button id="tab-hell" class="seg-btn" onclick="changeRankMode('hell')">HELL 🔥</button>
+        </div>
+        <div class="seg small" role="tablist">
+          <button id="tab-rank-hsk4" class="seg-btn active" onclick="changeRankLevel('hsk4')">HSK 4급</button>
+          <button id="tab-rank-hsk5" class="seg-btn" onclick="changeRankLevel('hsk5')">HSK 5급</button>
+          <button id="tab-rank-hsk6" class="seg-btn" onclick="changeRankLevel('hsk6')">HSK 6급</button>
+        </div>
+        <div class="ranking-list-container">
+          <ol id="ranking-list"></ol>
+        </div>
+        <button class="btn primary wide" onclick="returnToLobby()">로비로 돌아가기</button>
+      </div>
+    </section>
+
+    <!-- 4. 게임 화면 -->
+    <section id="game-container" class="screen" data-layout="portrait">
+      <header class="hud">
+        <button id="btn-home" class="icon-btn" onclick="openExitConfirm()" aria-label="로비로">⌂</button>
+        <div class="hud-score">
+          <span class="hud-label">SCORE <span class="hud-best">· BEST <b id="best-score">0</b></span></span>
+          <span id="score">0</span>
+        </div>
+        <div class="hud-meta">
+          <span id="mode-display" class="chip">NORMAL · HSK 4</span>
+          <span id="combo-chip" class="chip combo">COMBO 0</span>
+        </div>
+        <button id="btn-sound" class="icon-btn" onclick="cycleSound()" aria-label="소리">🔊</button>
       </header>
-
-      <div id="combo-display" class="combo-text"></div>
-      <div id="all-clear-display" class="all-clear-text">
-        ALL CLEAR!<br /><span style="font-size: 18pt; color: #fff"
-          >+1000 SCORE</span
-        >
-      </div>
-
-      <div id="quiz-modal" class="modal" style="z-index: 300">
-        <div
-          class="modal-content"
-          style="
-            border-color: #00ffcc;
-            box-shadow: 0 0 20px rgba(0, 255, 204, 0.3);
-          "
-        >
-          <h3 style="color: #00ffcc; margin-bottom: 15px">퀴즈!</h3>
-
-          <p
-            id="quiz-question"
-            style="
-              font-size: 25pt;
-              font-weight: bold;
-              color: #fff;
-              margin-bottom: 10px;
-            "
-          ></p>
-
-          <div
-            style="
-              display: flex;
-              justify-content: center;
-              gap: 10px;
-              margin-bottom: 15px;
-            "
-          >
-            <button
-              id="tts-replay-btn"
-              onclick="replayTTS()"
-              style="
-                background: rgba(255, 102, 204, 0.1);
-                border: 1px solid #ff66cc;
-                color: #ff66cc;
-                padding: 8px 15px;
-                border-radius: 8px;
-                cursor: pointer;
-                font-weight: bold;
-                transition: 0.2s;
-              "
-            >
-              🔊 음성 다시듣기
-            </button>
-            <button
-              id="hint-btn"
-              onclick="showHint()"
-              style="
-                background: rgba(0, 255, 204, 0.1);
-                border: 1px solid #00ffcc;
-                color: #00ffcc;
-                padding: 8px 15px;
-                border-radius: 8px;
-                cursor: pointer;
-                font-weight: bold;
-                transition: 0.2s;
-              "
-            >
-              💡 병음 힌트 보기
-            </button>
-          </div>
-
-          <p
-            id="quiz-pinyin"
-            style="
-              display: none;
-              color: #ff00ff;
-              font-size: 16pt;
-              margin-bottom: 20px;
-              font-style: italic;
-              letter-spacing: 2px;
-            "
-          ></p>
-
-          <div id="quiz-options"></div>
-          <p id="quiz-feedback" class="feedback"></p>
-        </div>
-      </div>
-      <!-- ★ 복습 모달 (게임 오버 시 표시) ★ -->
-      <div id="review-modal" class="modal" style="z-index: 350">
-        <div
-          class="modal-content"
-          style="
-            border-color: #f6d365;
-            box-shadow: 0 0 30px rgba(246, 211, 101, 0.4);
-            height: 75vh;
-            display: flex;
-            flex-direction: column;
-          "
-        >
-          <h3
-            style="
-              color: #f6d365;
-              text-shadow: 0 0 10px #f6d365;
-              font-size: 20pt;
-              margin-bottom: 10px;
-            "
-          >
-            학습 복습하기 📚
-          </h3>
-          <p style="color: #ccc; margin-bottom: 15px; font-size: 12pt">
-            이번 판에 맞힌 문장들을 다시 들어보세요!
-          </p>
-
-          <div
-            id="review-list"
-            style="
-              overflow-y: auto;
-              flex: 1;
-              margin-bottom: 20px;
-              text-align: left;
-              padding: 0 5px;
-              touch-action: pan-y;
-            "
-          ></div>
-
-          <button
-            class="option-btn"
-            onclick="goToGameOverModal()"
-            style="
-              background: linear-gradient(135deg, #4facfe, #00f2fe);
-              margin-bottom: 0;
-            "
-          >
-            랭킹 등록하러 가기 ➡️
-          </button>
-        </div>
-      </div>
-      <!-- 게임 오버 모달 -->
-      <div id="game-over-modal" class="modal">
-        <div
-          class="modal-content"
-          style="
-            border-color: #ff003c;
-            box-shadow: 0 0 30px rgba(255, 0, 60, 0.4);
-          "
-        >
-          <h3
-            style="
-              color: #ff003c;
-              text-shadow: 0 0 10px #ff003c;
-              font-size: 20pt;
-              margin-bottom: 10px;
-            "
-          >
-            GAME OVER
-          </h3>
-          <p
-            id="game-over-stats"
-            style="
-              font-size: 13pt;
-              margin-bottom: 20px;
-              line-height: 1.6;
-              color: #e0e0e0;
-            "
-          ></p>
-
-          <input
-            type="text"
-            id="nickname-input"
-            placeholder="닉네임 입력 (최대 6자)"
-            maxlength="6"
-            autocomplete="off"
-          />
-
-          <!-- ★ 버튼 두 개로 분리 ★ -->
-          <div style="display: flex; gap: 10px">
-            <button
-              class="option-btn"
-              onclick="saveRanking()"
-              style="
-                background: linear-gradient(135deg, #ff0844, #ffb199);
-                margin-bottom: 0;
-                flex: 6;
-              "
-            >
-              랭킹 등록
-            </button>
-            <button
-              class="option-btn"
-              onclick="skipRankingAndGoLobby()"
-              style="
-                background: rgba(255, 255, 255, 0.2);
-                margin-bottom: 0;
-                flex: 4;
-                font-size: 11pt;
-              "
-            >
-              로비로 가기
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <div id="alert-modal" class="modal" style="z-index: 300">
-        <div
-          class="modal-content"
-          style="
-            border-color: #ffaa00;
-            box-shadow: 0 0 30px rgba(255, 170, 0, 0.4);
-          "
-        >
-          <h3
-            style="
-              color: #ffaa00;
-              text-shadow: 0 0 10px #ffaa00;
-              font-size: 18pt;
-              margin-bottom: 15px;
-            "
-          >
-            알림
-          </h3>
-          <p
-            style="
-              font-size: 14pt;
-              margin-bottom: 25px;
-              line-height: 1.6;
-              color: #fff;
-            "
-          >
-            이름을 남겨주시오!<br /><span style="font-size: 11pt; color: #aaa"
-              >(닉네임을 입력해주세요)</span
-            >
-          </p>
-          <button
-            class="option-btn"
-            onclick="closeAlertModal()"
-            style="
-              background: linear-gradient(135deg, #f6d365, #fda085);
-              color: #000;
-              box-shadow: 0 0 15px rgba(253, 160, 133, 0.5);
-            "
-          >
-            확인
-          </button>
-        </div>
-      </div>
 
       <div id="board-wrapper">
         <div id="grid-board"></div>
+        <div id="combo-display" class="combo-text"></div>
+        <div id="all-clear-display" class="all-clear-text">
+          ALL CLEAR!<br /><span>+1000 SCORE</span>
+        </div>
+        <div id="board-banner" class="board-banner" hidden>
+          <span id="board-banner-text"></span>
+          <button id="board-banner-btn" class="btn small"></button>
+        </div>
       </div>
 
       <div id="block-dock">
@@ -363,62 +196,117 @@
         <div class="dock-slot" id="slot-1" data-slot="1"></div>
         <div class="dock-slot" id="slot-2" data-slot="2"></div>
       </div>
+
+      <div id="inventory-container">
+        <button id="item-bomb" class="item-btn" onclick="useBomb()">
+          <span class="ib-icon">💣</span><span class="ib-name">폭탄</span>
+          <span class="ib-cnt" id="item-bomb-cnt">0</span>
+        </button>
+        <button id="item-reroll" class="item-btn" onclick="useReroll()">
+          <span class="ib-icon">🔄</span><span class="ib-name">리롤</span>
+          <span class="ib-cnt" id="item-reroll-cnt">0</span>
+        </button>
+        <button id="item-double" class="item-btn" onclick="useDoubleScore()">
+          <span class="ib-icon">⭐</span><span class="ib-name">점수x2</span>
+          <span class="ib-cnt" id="item-double-cnt">0</span>
+        </button>
+      </div>
+    </section>
+
+    <!-- ===== 모달 ===== -->
+    <!-- 급수 선택 -->
+    <div id="hsk-modal" class="modal">
+      <div class="sheet">
+        <h3 id="hsk-modal-title" class="sheet-title">도전할 급수를 선택하세요</h3>
+        <div class="level-list">
+          <button class="level-btn l4" onclick="selectHSK('hsk4')">
+            <b>HSK 4급</b><span id="cnt-hsk4"></span>
+          </button>
+          <button class="level-btn l5" onclick="selectHSK('hsk5')">
+            <b>HSK 5급</b><span id="cnt-hsk5"></span>
+          </button>
+          <button class="level-btn l6" onclick="selectHSK('hsk6')">
+            <b>HSK 6급</b><span id="cnt-hsk6"></span>
+          </button>
+        </div>
+        <button class="btn ghost wide" onclick="closeHSKModal()">취소</button>
+      </div>
     </div>
 
-    <!-- ★ 로비로 돌아가기 확인 모달 ★ -->
-    <div id="giveup-modal" class="modal" style="z-index: 400">
-      <div
-        class="modal-content"
-        style="
-          border-color: #ff3333;
-          box-shadow: 0 0 30px rgba(255, 51, 51, 0.4);
-        "
-      >
-        <h3
-          style="
-            color: #ff3333;
-            text-shadow: 0 0 10px #ff3333;
-            font-size: 18pt;
-            margin-bottom: 15px;
-          "
-        >
-          게임 종료
-        </h3>
-        <p
-          style="
-            font-size: 14pt;
-            margin-bottom: 25px;
-            line-height: 1.6;
-            color: #fff;
-          "
-        >
-          정말 로비로 돌아가시겠습니까?<br />
-          <span style="font-size: 11pt; color: #aaa"
-            >(지금까지 맞힌 문장들을 복습합니다.)</span
-          >
-        </p>
-        <div style="display: flex; gap: 10px">
-          <button
-            class="option-btn"
-            onclick="processGiveUp(true)"
-            style="
-              background: linear-gradient(135deg, #ff0844, #ffb199);
-              margin-bottom: 0;
-            "
-          >
-            예
+    <!-- 퀴즈 -->
+    <div id="quiz-modal" class="modal">
+      <div class="sheet quiz-sheet">
+        <p id="quiz-tag" class="quiz-tag">관문을 통과하라!</p>
+        <p id="quiz-question" class="quiz-word"></p>
+        <div class="quiz-hint-row">
+          <button id="hint-btn" class="btn small outline" onclick="showHint()">💡 병음 힌트</button>
+          <p id="quiz-pinyin" class="quiz-pinyin" hidden></p>
+        </div>
+        <div id="quiz-options"></div>
+        <p id="quiz-feedback" class="feedback"></p>
+        <p class="kbd-tip">키보드 1 · 2 · 3 으로도 선택할 수 있어요</p>
+      </div>
+    </div>
+
+    <!-- 보너스 아이템 선택 -->
+    <div id="item-selection-modal" class="modal">
+      <div class="sheet">
+        <h3 class="sheet-title gold">🎁 보너스 획득!</h3>
+        <p class="sheet-desc">원하는 아이템을 하나 고르세요.</p>
+        <div class="item-choice">
+          <button class="choice-btn" onclick="selectItem('bomb')">
+            <span class="ci">💣</span><b>폭탄</b><span>3×3 칸을 한 번에 제거</span>
           </button>
-          <button
-            class="option-btn"
-            onclick="processGiveUp(false)"
-            style="background: rgba(255, 255, 255, 0.2); margin-bottom: 0"
-          >
-            아니오
+          <button class="choice-btn" onclick="selectItem('reroll')">
+            <span class="ci">🔄</span><b>리롤</b><span>남은 블록을 새로 받기</span>
+          </button>
+          <button class="choice-btn" onclick="selectItem('doubleScore')">
+            <span class="ci">⭐</span><b>점수 x2</b><span>콤보가 끊길 때까지 2배</span>
           </button>
         </div>
       </div>
     </div>
 
+    <!-- 게임 오버 -->
+    <div id="game-over-modal" class="modal">
+      <div class="sheet">
+        <h3 class="sheet-title danger">GAME OVER</h3>
+        <div class="stat-grid">
+          <div><span>최종 점수</span><b id="go-score">0</b></div>
+          <div><span>최대 콤보</span><b id="go-combo">0</b></div>
+          <div><span id="go-mode-label">모드</span><b id="go-mode">-</b></div>
+        </div>
+        <p id="go-record" class="new-record" hidden>🎉 최고 기록 갱신!</p>
+        <input
+          type="text"
+          id="nickname-input"
+          placeholder="닉네임 (최대 10자)"
+          maxlength="10"
+          autocomplete="off"
+          enterkeyhint="done"
+        />
+        <p id="nickname-error" class="input-error" hidden>이름을 남겨주세요!</p>
+        <button class="btn primary wide" onclick="saveRanking()">랭킹 등록</button>
+        <div class="btn-row">
+          <button class="btn ghost" onclick="retryGame()">다시 하기</button>
+          <button class="btn ghost" onclick="skipRanking()">로비로</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 나가기 확인 -->
+    <div id="exit-modal" class="modal">
+      <div class="sheet">
+        <h3 class="sheet-title">게임을 그만둘까요?</h3>
+        <p class="sheet-desc">지금까지의 점수는 기록되지 않아요.</p>
+        <div class="btn-row">
+          <button class="btn primary" onclick="closeExitConfirm()">계속하기</button>
+          <button class="btn ghost" onclick="exitToLobby()">로비로</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="toast" class="toast" hidden></div>
     <div id="drag-overlay"></div>
 
     <script src="data.js"></script>
