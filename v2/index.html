@@ -1,0 +1,408 @@
+<!doctype html>
+<!-- © 2026 진담중국어 (Jindam Chinese). All rights reserved. -->
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"
+    />
+    <title>진담중국어 · HSK 블록퍼즐</title>
+    <meta name="author" content="진담중국어" />
+    <meta name="copyright" content="© 2026 진담중국어. All rights reserved." />
+    <meta name="description" content="HSK 단어 퀴즈와 블록 퍼즐을 함께 즐기는 중국어 학습 게임" />
+
+    <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png" />
+    <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+    <link rel="manifest" href="manifest.webmanifest" />
+    <meta name="theme-color" content="#FFF4DC" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="HSK블록" />
+
+    <!-- 크롬 유도: 인앱 브라우저(카카오톡·네이버·인스타 등)면 크롬으로 다시 열기 -->
+    <script>
+      (function () {
+        var ua = navigator.userAgent || '';
+        var isAndroid = /Android/i.test(ua);
+        var isIOS = /iPhone|iPad|iPod/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+        var inApp = /KAKAOTALK|NAVER|Instagram|FBAN|FBAV|Line\/|DaumApps|everytimeApp|BAND\/|; wv\)/i.test(ua);
+        var brands = (navigator.userAgentData && navigator.userAgentData.brands) || [];
+        var hasChromeBrand = brands.some(function (b) { return b.brand === 'Google Chrome'; });
+        var isChrome = isIOS
+          ? /CriOS/i.test(ua)
+          : hasChromeBrand || (/Chrome\/\d+/.test(ua) && !/Edg|OPR|SamsungBrowser|Whale|YaBrowser|Firefox/i.test(ua) && !inApp);
+        var standalone = (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
+        var isWeb = /^https?:$/.test(location.protocol);
+        var noRedirect = /[?&]nochrome=1/.test(location.search);
+        window.__BROWSER = { isAndroid: isAndroid, isIOS: isIOS, inApp: inApp, isChrome: isChrome, standalone: standalone, isWeb: isWeb };
+        if (isWeb && isAndroid && inApp && !noRedirect) {
+          var sep = location.search ? '&' : '?';
+          location.href = 'intent://' + location.host + location.pathname + location.search +
+            '#Intent;scheme=' + location.protocol.replace(':', '') + ';package=com.android.chrome;S.browser_fallback_url=' +
+            encodeURIComponent(location.href + sep + 'nochrome=1') + ';end';
+          return;
+        }
+        if (isWeb && isIOS && /KAKAOTALK/i.test(ua) && !noRedirect) {
+          location.href = 'kakaotalk://web/openExternal?url=' + encodeURIComponent(location.href);
+        }
+      })();
+    </script>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Jua&family=Gowun+Dodum&family=Noto+Sans+SC:wght@500;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <!-- data-assets: 음악 파일 위치 (v2 폴더에서는 상위 폴더의 mp3 공유) / data-sw: 오프라인 캐시 사용 여부 -->
+  <body data-assets="../" data-sw="0">
+    <!-- ===== 아이콘 세트 (이모지 대신 사용) ===== -->
+    <svg width="0" height="0" style="position: absolute" aria-hidden="true">
+      <defs>
+        <symbol id="i-home" viewBox="0 0 24 24"><path d="M3.5 11 12 3.8l8.5 7.2V20a1 1 0 0 1-1 1H15v-6H9v6H4.5a1 1 0 0 1-1-1z" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/></symbol>
+        <symbol id="i-sound" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" fill="currentColor"/><path d="M15.5 9.2a4 4 0 0 1 0 5.6M18.2 6.6a7.6 7.6 0 0 1 0 10.8"/></g></symbol>
+        <symbol id="i-music-off" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 17.5V6l10-2v11.5"/><circle cx="6.5" cy="17.5" r="2.5" fill="currentColor"/><circle cx="16.5" cy="15.5" r="2.5" fill="currentColor"/><path d="M3 3l18 18"/></g></symbol>
+        <symbol id="i-mute" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" fill="currentColor"/><path d="M16 9.5l5 5M21 9.5l-5 5"/></g></symbol>
+        <symbol id="i-bomb" viewBox="0 0 24 24"><circle cx="10.5" cy="14" r="7" fill="currentColor"/><path d="M14.5 9l3-3" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/><path d="M19.5 2.5v2.2M22 5h-2.2M21 3l-1.4 1.4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="8" cy="11.5" r="1.8" fill="#fff" opacity=".6"/></symbol>
+        <symbol id="i-reroll" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M19.5 11A7.5 7.5 0 0 0 5.6 7.4M4.5 4v4h4"/><path d="M4.5 13a7.5 7.5 0 0 0 13.9 3.6M19.5 20v-4h-4"/></g></symbol>
+        <symbol id="i-star" viewBox="0 0 24 24"><path d="M12 2.6l2.8 5.9 6.4.8-4.7 4.4 1.2 6.4L12 17l-5.7 3.1 1.2-6.4-4.7-4.4 6.4-.8z" fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></symbol>
+        <symbol id="i-trophy" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4h10v5a5 5 0 0 1-10 0z" fill="currentColor"/><path d="M7 6H4.5a3 3 0 0 0 3 4M17 6h2.5a3 3 0 0 1-3 4M12 14v3.5M8.5 20.5h7M9.5 17.5h5"/></g></symbol>
+        <symbol id="i-flame" viewBox="0 0 24 24"><path d="M12 22c4.2 0 7-2.9 7-6.8 0-3.6-2.4-5.6-3.6-9.2-1.8 1.4-2.6 3.3-2.6 5-1-.8-2-2.4-2-4.6C7.8 9 5 11.6 5 15.2 5 19.1 7.8 22 12 22z" fill="currentColor"/><path d="M12 21c1.8 0 3-1.2 3-3 0-1.6-1-2.6-1.7-4-1 1-1.3 1.8-1.3 2.6-.6-.4-1-1-1.2-1.9C9.7 15.9 9 17 9 18c0 1.8 1.2 3 3 3z" fill="#fff" opacity=".55"/></symbol>
+        <symbol id="i-bolt" viewBox="0 0 24 24"><path d="M13.5 2 4.5 13.5H11L10 22l9.5-12H13z" fill="currentColor" stroke="currentColor" stroke-width="1" stroke-linejoin="round"/></symbol>
+        <symbol id="i-lock" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><rect x="5.5" y="10.5" width="13" height="10" rx="2.5" fill="currentColor"/><path d="M8.5 10.5V7.5a3.5 3.5 0 0 1 7 0v3"/></g></symbol>
+        <symbol id="i-unlock" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><rect x="5.5" y="10.5" width="13" height="10" rx="2.5" fill="currentColor"/><path d="M8.5 10.5V7.5a3.5 3.5 0 0 1 6.8-1.2"/></g></symbol>
+        <symbol id="i-heart" viewBox="0 0 24 24"><path d="M12 20.5S3.5 15 3.5 9.3A4.4 4.4 0 0 1 12 7a4.4 4.4 0 0 1 8.5 2.3C20.5 15 12 20.5 12 20.5z" fill="currentColor"/><ellipse cx="8" cy="9" rx="1.8" ry="1.2" fill="#fff" opacity=".55" transform="rotate(-30 8 9)"/></symbol>
+        <symbol id="i-heart-empty" viewBox="0 0 24 24"><path d="M12 20.5S3.5 15 3.5 9.3A4.4 4.4 0 0 1 12 7a4.4 4.4 0 0 1 8.5 2.3C20.5 15 12 20.5 12 20.5z" fill="none" stroke="currentColor" stroke-width="2"/></symbol>
+        <symbol id="i-left" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+        <symbol id="i-right" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+        <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+        <symbol id="i-leaf" viewBox="0 0 24 24"><path d="M5 19C5 10 11 5 20 5c0 9-5.5 14.5-14 14.5z" fill="currentColor"/><path d="M5 19.5 13 11.5" stroke="#fff" stroke-width="1.8" stroke-linecap="round" opacity=".7"/></symbol>
+        <symbol id="i-install" viewBox="0 0 24 24"><path d="M12 3.5v11M7.5 10l4.5 4.5 4.5-4.5M5 20.5h14" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+        <symbol id="i-bulb" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0-3.6 10.8c.8.7 1.1 1.4 1.1 2.2h5c0-.8.3-1.5 1.1-2.2A6 6 0 0 0 12 3z" fill="currentColor" fill-opacity=".25"/><path d="M9.5 19h5M10.5 21.5h3"/></g></symbol>
+        <symbol id="i-play" viewBox="0 0 24 24"><path d="M8 5.5v13l10.5-6.5z" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></symbol>
+        <symbol id="i-sparkle" viewBox="0 0 24 24"><path d="M12 2.5c.8 4.6 2.9 6.7 7.5 7.5-4.6.8-6.7 2.9-7.5 7.5-.8-4.6-2.9-6.7-7.5-7.5 4.6-.8 6.7-2.9 7.5-7.5z" fill="currentColor"/><path d="M19 15.5c.3 1.8 1.2 2.7 3 3-1.8.3-2.7 1.2-3 3-.3-1.8-1.2-2.7-3-3 1.8-.3 2.7-1.2 3-3z" fill="currentColor"/></symbol>
+        <!-- 판다 마스코트 (기본 / 신남 / 슬픔) -->
+        <symbol id="m-panda" viewBox="0 0 120 110">
+          <circle cx="27" cy="27" r="16" fill="#3A3352"/><circle cx="93" cy="27" r="16" fill="#3A3352"/>
+          <circle cx="27" cy="27" r="7" fill="#FFB3C7"/><circle cx="93" cy="27" r="7" fill="#FFB3C7"/>
+          <ellipse cx="60" cy="62" rx="48" ry="42" fill="#fff" stroke="#3A3352" stroke-width="3.5"/>
+          <ellipse cx="41" cy="58" rx="11" ry="14" transform="rotate(-22 41 58)" fill="#3A3352"/>
+          <ellipse cx="79" cy="58" rx="11" ry="14" transform="rotate(22 79 58)" fill="#3A3352"/>
+          <circle cx="43" cy="56" r="4.5" fill="#fff"/><circle cx="77" cy="56" r="4.5" fill="#fff"/>
+          <circle cx="44.2" cy="54.6" r="1.6" fill="#3A3352"/><circle cx="78.2" cy="54.6" r="1.6" fill="#3A3352"/>
+          <ellipse cx="60" cy="71" rx="5.5" ry="3.8" fill="#3A3352"/>
+          <path d="M53 78q7 7 14 0" fill="none" stroke="#3A3352" stroke-width="3" stroke-linecap="round"/>
+          <circle cx="29" cy="74" r="6.5" fill="#FFB3C7" opacity=".85"/><circle cx="91" cy="74" r="6.5" fill="#FFB3C7" opacity=".85"/>
+        </symbol>
+        <symbol id="m-panda-happy" viewBox="0 0 120 110">
+          <circle cx="27" cy="27" r="16" fill="#3A3352"/><circle cx="93" cy="27" r="16" fill="#3A3352"/>
+          <circle cx="27" cy="27" r="7" fill="#FFB3C7"/><circle cx="93" cy="27" r="7" fill="#FFB3C7"/>
+          <ellipse cx="60" cy="62" rx="48" ry="42" fill="#fff" stroke="#3A3352" stroke-width="3.5"/>
+          <ellipse cx="41" cy="58" rx="11" ry="14" transform="rotate(-22 41 58)" fill="#3A3352"/>
+          <ellipse cx="79" cy="58" rx="11" ry="14" transform="rotate(22 79 58)" fill="#3A3352"/>
+          <path d="M38 58q5-6 10 0M72 58q5-6 10 0" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round"/>
+          <ellipse cx="60" cy="70" rx="5.5" ry="3.8" fill="#3A3352"/>
+          <path d="M50 77q10 12 20 0z" fill="#FF7A9C" stroke="#3A3352" stroke-width="2.6" stroke-linejoin="round"/>
+          <circle cx="29" cy="74" r="7" fill="#FFB3C7"/><circle cx="91" cy="74" r="7" fill="#FFB3C7"/>
+        </symbol>
+        <symbol id="m-panda-sad" viewBox="0 0 120 110">
+          <circle cx="27" cy="27" r="16" fill="#3A3352"/><circle cx="93" cy="27" r="16" fill="#3A3352"/>
+          <circle cx="27" cy="27" r="7" fill="#FFB3C7"/><circle cx="93" cy="27" r="7" fill="#FFB3C7"/>
+          <ellipse cx="60" cy="62" rx="48" ry="42" fill="#fff" stroke="#3A3352" stroke-width="3.5"/>
+          <ellipse cx="41" cy="60" rx="11" ry="14" transform="rotate(-22 41 60)" fill="#3A3352"/>
+          <ellipse cx="79" cy="60" rx="11" ry="14" transform="rotate(22 79 60)" fill="#3A3352"/>
+          <circle cx="43" cy="60" r="4" fill="#fff"/><circle cx="77" cy="60" r="4" fill="#fff"/>
+          <path d="M83 66q3 6 0 9q-3-3 0-9z" fill="#7FC8FF"/>
+          <ellipse cx="60" cy="73" rx="5.5" ry="3.8" fill="#3A3352"/>
+          <path d="M53 84q7-6 14 0" fill="none" stroke="#3A3352" stroke-width="3" stroke-linecap="round"/>
+        </symbol>
+      </defs>
+    </svg>
+
+    <div id="flash-overlay"></div>
+
+    <!-- 크롬 안내 배너 -->
+    <div id="browser-banner" hidden>
+      <div class="bb-text">
+        <strong>크롬(Chrome)에서 가장 잘 동작해요</strong>
+        <span id="bb-sub">음성·드래그가 안정적이에요.</span>
+      </div>
+      <div class="bb-actions">
+        <button id="bb-open" class="bb-btn primary">크롬으로 열기</button>
+        <button id="bb-close" class="bb-btn">닫기</button>
+      </div>
+    </div>
+
+    <!-- 1. 시작 화면 -->
+    <section id="start-screen" class="screen active">
+      <div class="start-inner">
+        <svg class="mascot big bounce" viewBox="0 0 120 110"><use href="#m-panda-happy" /></svg>
+        <p class="brand">진담중국어</p>
+        <h1 class="start-title">HSK 블록퍼즐</h1>
+        <p class="tap-text">화면을 터치하거나 아무 키나 누르세요</p>
+      </div>
+      <p class="copyright start-copy">© 2026 진담중국어. All rights reserved.</p>
+    </section>
+
+    <!-- 2. 로비 -->
+    <section id="lobby-screen" class="screen">
+      <div class="lobby-inner">
+        <div class="lobby-head">
+          <svg class="mascot" viewBox="0 0 120 110"><use href="#m-panda" /></svg>
+          <div>
+            <p class="brand">진담중국어</p>
+            <h1 class="lobby-title">HSK 블록퍼즐</h1>
+          </div>
+        </div>
+
+        <div class="mode-cards">
+          <button class="mode-card normal" onclick="openHSKModal('normal')">
+            <span class="mc-icon"><svg class="ic"><use href="#i-leaf" /></svg></span>
+            <span class="mc-text">
+              <span class="mc-name">노말 모드</span>
+              <span class="mc-desc">25단어씩 단계 도전 · 하트 1개</span>
+            </span>
+            <svg class="ic mc-arrow"><use href="#i-right" /></svg>
+          </button>
+          <button class="mode-card hell" onclick="openHSKModal('hell')">
+            <span class="mc-icon"><svg class="ic"><use href="#i-flame" /></svg></span>
+            <span class="mc-text">
+              <span class="mc-name">헬 모드</span>
+              <span class="mc-desc">100단어씩 · 하트 3개 · 점수 2배</span>
+            </span>
+            <svg class="ic mc-arrow"><use href="#i-right" /></svg>
+          </button>
+          <button class="mode-card rank" onclick="openRankingFromLobby()">
+            <span class="mc-icon"><svg class="ic"><use href="#i-trophy" /></svg></span>
+            <span class="mc-text">
+              <span class="mc-name">명예의 전당</span>
+              <span class="mc-desc">급수별 누적 랭킹 보기</span>
+            </span>
+            <svg class="ic mc-arrow"><use href="#i-right" /></svg>
+          </button>
+        </div>
+
+        <div class="lobby-footer">
+          <button id="voice-chip" class="pill" title="눌러서 음성 테스트">
+            <svg class="ic"><use href="#i-sound" /></svg><span id="voice-chip-text">음성 확인 중…</span>
+          </button>
+          <button id="lobby-sound" class="pill" onclick="cycleSound()"></button>
+          <button id="install-btn" class="pill accent" hidden>
+            <svg class="ic"><use href="#i-install" /></svg>앱으로 설치
+          </button>
+        </div>
+        <p class="copyright">© 2026 진담중국어 · All rights reserved.<br />단어 데이터와 게임 디자인의 무단 복제·배포를 금합니다.</p>
+        <p id="ios-install-tip" class="tiny-tip" hidden>
+          아이폰/아이패드: 공유 버튼 → <b>홈 화면에 추가</b>를 누르면 앱 아이콘이 생겨요.
+        </p>
+      </div>
+    </section>
+
+    <!-- 2-1. 단계 선택 -->
+    <section id="stage-screen" class="screen">
+      <div class="stage-inner">
+        <div class="stage-head">
+          <button class="icon-btn" onclick="returnToLobby()" aria-label="로비로"><svg class="ic"><use href="#i-left" /></svg></button>
+          <div class="stage-head-text">
+            <h2 id="stage-title">노말 · HSK 4급</h2>
+            <p id="stage-sub"></p>
+          </div>
+          <button class="icon-btn gold" onclick="showRankingScreen(gameMode, gameLevel, 'stage')" aria-label="랭킹"><svg class="ic"><use href="#i-trophy" /></svg></button>
+        </div>
+        <div class="stage-summary">
+          <div><span>클리어</span><b id="stage-cleared">0 / 0</b></div>
+          <div><span>모은 별</span><b class="gold" id="stage-stars">0 / 0</b></div>
+          <div class="stage-bar-wrap"><div id="stage-bar"></div></div>
+        </div>
+        <div id="stage-grid" class="stage-grid"></div>
+      </div>
+    </section>
+
+    <!-- 3. 랭킹 -->
+    <section id="ranking-screen" class="screen">
+      <div class="ranking-inner">
+        <h2 class="screen-title"><svg class="ic"><use href="#i-trophy" /></svg>명예의 전당</h2>
+        <div class="seg" role="tablist">
+          <button id="tab-normal" class="seg-btn active" onclick="changeRankMode('normal')">노말</button>
+          <button id="tab-hell" class="seg-btn" onclick="changeRankMode('hell')">헬</button>
+        </div>
+        <div class="seg small" role="tablist">
+          <button id="tab-rank-hsk4" class="seg-btn active" onclick="changeRankLevel('hsk4')">HSK 4급</button>
+          <button id="tab-rank-hsk5" class="seg-btn" onclick="changeRankLevel('hsk5')">HSK 5급</button>
+          <button id="tab-rank-hsk6" class="seg-btn" onclick="changeRankLevel('hsk6')">HSK 6급</button>
+        </div>
+        <p class="rank-desc">클리어한 단계들의 최고 점수를 모두 더한 누적 랭킹이에요.</p>
+        <div class="ranking-list-container">
+          <ol id="ranking-list"></ol>
+        </div>
+        <button class="btn primary wide" onclick="closeRanking()">돌아가기</button>
+      </div>
+    </section>
+
+    <!-- 4. 게임 화면 -->
+    <section id="game-container" class="screen" data-layout="portrait">
+      <header class="hud">
+        <button id="btn-home" class="icon-btn" onclick="openExitConfirm()" aria-label="나가기"><svg class="ic"><use href="#i-home" /></svg></button>
+        <div class="hud-score">
+          <span class="hud-label">점수 <span class="hud-best">· 최고 <b id="best-score">0</b></span></span>
+          <span id="score">0</span>
+        </div>
+        <div class="hud-meta">
+          <span id="mode-display" class="chip">노말 · HSK 4 · 1단계</span>
+          <span class="chip-row">
+            <span id="hearts" class="hearts"></span>
+            <span id="word-chip" class="chip words">단어 0/25</span>
+            <span id="combo-chip" class="chip combo">콤보 0</span>
+          </span>
+        </div>
+        <button id="btn-sound" class="icon-btn" onclick="cycleSound()" aria-label="소리"></button>
+        <div class="hud-progress"><div id="stage-progress"></div></div>
+      </header>
+
+      <div id="board-wrapper">
+        <canvas id="board-canvas"></canvas>
+        <div id="combo-display" class="combo-text"></div>
+        <div id="all-clear-display" class="all-clear-text">올 클리어!<span>+1000</span></div>
+        <div id="board-banner" class="board-banner" hidden>
+          <span id="board-banner-text"></span>
+          <span class="bb-btns">
+            <button id="board-banner-btn2" class="btn small primary" hidden></button>
+            <button id="board-banner-btn" class="btn small"></button>
+          </span>
+        </div>
+      </div>
+
+      <div id="block-dock">
+        <div class="dock-slot" id="slot-0" data-slot="0"><canvas></canvas></div>
+        <div class="dock-slot" id="slot-1" data-slot="1"><canvas></canvas></div>
+        <div class="dock-slot" id="slot-2" data-slot="2"><canvas></canvas></div>
+      </div>
+
+      <div id="inventory-container">
+        <button id="item-bomb" class="item-btn" onclick="useBomb()">
+          <svg class="ic ib-icon bomb"><use href="#i-bomb" /></svg><span class="ib-name">폭탄</span>
+          <span class="ib-cnt" id="item-bomb-cnt">0</span>
+        </button>
+        <button id="item-reroll" class="item-btn" onclick="useReroll()">
+          <svg class="ic ib-icon reroll"><use href="#i-reroll" /></svg><span class="ib-name">새 블록</span>
+          <span class="ib-cnt" id="item-reroll-cnt">0</span>
+        </button>
+        <button id="item-double" class="item-btn" onclick="useDoubleScore()">
+          <svg class="ic ib-icon star"><use href="#i-star" /></svg><span class="ib-name">점수×2</span>
+          <span class="ib-cnt" id="item-double-cnt">0</span>
+        </button>
+      </div>
+    </section>
+
+    <!-- ===== 모달 ===== -->
+    <div id="hsk-modal" class="modal">
+      <div class="sheet">
+        <h3 id="hsk-modal-title" class="sheet-title">급수 선택</h3>
+        <div class="level-list">
+          <button class="level-btn l4" onclick="selectHSK('hsk4')"><b>HSK 4급</b><span id="cnt-hsk4"></span></button>
+          <button class="level-btn l5" onclick="selectHSK('hsk5')"><b>HSK 5급</b><span id="cnt-hsk5"></span></button>
+          <button class="level-btn l6" onclick="selectHSK('hsk6')"><b>HSK 6급</b><span id="cnt-hsk6"></span></button>
+        </div>
+        <button class="btn ghost wide" onclick="closeHSKModal()">취소</button>
+      </div>
+    </div>
+
+    <div id="quiz-modal" class="modal">
+      <div class="sheet quiz-sheet">
+        <p id="quiz-tag" class="quiz-tag">관문을 통과하라!</p>
+        <div id="quiz-timer" class="quiz-timer" title="3초 안에 맞히면 스피드 보너스!">
+          <svg class="ic"><use href="#i-bolt" /></svg>
+          <div class="qt-track"><div id="quiz-timer-bar"></div></div>
+        </div>
+        <p id="quiz-question" class="quiz-word"></p>
+        <div class="quiz-hint-row">
+          <button id="hint-btn" class="btn small soft" onclick="showHint()"><svg class="ic"><use href="#i-bulb" /></svg>병음 힌트</button>
+          <p id="quiz-pinyin" class="quiz-pinyin" hidden></p>
+        </div>
+        <div id="quiz-options"></div>
+        <p id="quiz-feedback" class="feedback"></p>
+        <p class="kbd-tip">키보드 1 · 2 · 3 으로도 선택할 수 있어요</p>
+      </div>
+    </div>
+
+    <div id="item-selection-modal" class="modal">
+      <div class="sheet">
+        <svg class="mascot small" viewBox="0 0 120 110"><use href="#m-panda-happy" /></svg>
+        <h3 class="sheet-title">보너스 획득!</h3>
+        <p class="sheet-desc">원하는 아이템을 하나 고르세요.</p>
+        <div class="item-choice">
+          <button class="choice-btn" onclick="selectItem('bomb')"><span class="ci bomb"><svg class="ic"><use href="#i-bomb" /></svg></span><b>폭탄</b><span>3×3 칸을 한 번에 제거</span></button>
+          <button class="choice-btn" onclick="selectItem('reroll')"><span class="ci reroll"><svg class="ic"><use href="#i-reroll" /></svg></span><b>새 블록</b><span>남은 블록을 새로 받기</span></button>
+          <button class="choice-btn" onclick="selectItem('doubleScore')"><span class="ci star"><svg class="ic"><use href="#i-star" /></svg></span><b>점수 ×2</b><span>콤보가 끊길 때까지 2배</span></button>
+        </div>
+      </div>
+    </div>
+
+    <div id="stage-clear-modal" class="modal">
+      <div class="sheet">
+        <svg class="mascot small bounce" viewBox="0 0 120 110"><use href="#m-panda-happy" /></svg>
+        <h3 id="clear-title" class="sheet-title">1단계 클리어!</h3>
+        <div id="clear-stars" class="big-stars"></div>
+        <div class="stat-grid">
+          <div><span>점수</span><b id="clear-score">0</b></div>
+          <div><span>최대 콤보</span><b id="clear-combo">0</b></div>
+          <div><span>틀린 횟수</span><b id="clear-wrong">0</b></div>
+        </div>
+        <p id="clear-msg" class="new-record" hidden></p>
+        <div id="rank-form">
+          <input type="text" id="nickname-input" placeholder="랭킹에 쓸 이름 (최대 10자)" maxlength="10" autocomplete="off" enterkeyhint="done" />
+          <p id="nickname-error" class="input-error" hidden>이름을 남겨주세요!</p>
+          <button class="btn soft wide" onclick="saveRanking()">이름 등록하고 랭킹 보기</button>
+        </div>
+        <div id="rank-done" class="rank-done" hidden>
+          <span class="rd-text"><svg class="ic"><use href="#i-trophy" /></svg><span id="rank-done-text"></span></span>
+          <button class="btn small ghost" onclick="showRankingScreen(gameMode, gameLevel, 'stage')">보기</button>
+        </div>
+        <button id="clear-next" class="btn primary wide" onclick="nextStage()">다음 단계<svg class="ic"><use href="#i-play" /></svg></button>
+        <div class="btn-row">
+          <button class="btn ghost" onclick="retryGame()">다시 하기</button>
+          <button class="btn ghost" onclick="backToStages()">단계 목록</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="stage-fail-modal" class="modal">
+      <div class="sheet">
+        <svg class="mascot small" viewBox="0 0 120 110"><use href="#m-panda-sad" /></svg>
+        <h3 id="fail-title" class="sheet-title danger">1단계 실패</h3>
+        <p class="sheet-desc">블록을 놓을 곳이 없어요. 다시 도전해 볼까요?</p>
+        <div class="fail-progress">
+          <div class="fp-row"><span>맞힌 단어</span><b id="fail-words">0 / 25</b></div>
+          <div class="fp-bar"><div id="fail-bar"></div></div>
+          <div class="fp-row"><span>점수</span><b id="fail-score">0</b></div>
+        </div>
+        <button class="btn primary wide" onclick="retryGame()">다시 도전</button>
+        <div class="btn-row">
+          <button class="btn ghost" onclick="backToStages()">단계 목록</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="exit-modal" class="modal">
+      <div class="sheet">
+        <h3 class="sheet-title">게임을 그만둘까요?</h3>
+        <p class="sheet-desc">지금까지의 점수는 기록되지 않아요.</p>
+        <div class="btn-row">
+          <button class="btn primary" onclick="closeExitConfirm()">계속하기</button>
+          <button class="btn ghost" onclick="exitToLobby()">단계 목록으로</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="toast" class="toast" hidden></div>
+    <div id="drag-overlay"><img id="drag-img" alt="" draggable="false" /></div>
+
+    <!-- 단어 데이터는 상위 폴더와 공유 (정식 주소로 옮길 때 data.js 로 변경) -->
+    <script src="../data.js"></script>
+    <script src="scripts.js"></script>
+  </body>
+</html>
