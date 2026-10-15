@@ -152,7 +152,7 @@
             <h2 id="stage-title">NORMAL · HSK 4급</h2>
             <p id="stage-sub"></p>
           </div>
-          <button class="icon-btn" onclick="showRankingScreen(gameMode, gameLevel, loadProgress()[gameMode]?.[gameLevel]?.last || 1, 'stage')" aria-label="랭킹">🏆</button>
+          <button class="icon-btn" onclick="showRankingScreen(gameMode, gameLevel, 'stage')" aria-label="랭킹">🏆</button>
         </div>
         <div class="stage-summary">
           <div><span>클리어</span><b id="stage-cleared">0 / 0</b></div>
@@ -176,11 +176,7 @@
           <button id="tab-rank-hsk5" class="seg-btn" onclick="changeRankLevel('hsk5')">HSK 5급</button>
           <button id="tab-rank-hsk6" class="seg-btn" onclick="changeRankLevel('hsk6')">HSK 6급</button>
         </div>
-        <div class="stage-stepper">
-          <button id="rank-prev" class="icon-btn" onclick="changeRankStage(-1)" aria-label="이전 단계">‹</button>
-          <b id="rank-stage-label">1단계</b>
-          <button id="rank-next" class="icon-btn" onclick="changeRankStage(1)" aria-label="다음 단계">›</button>
-        </div>
+        <p class="rank-desc">클리어한 단계들의 최고 점수를 모두 더한 누적 랭킹이에요.</p>
         <div class="ranking-list-container">
           <ol id="ranking-list"></ol>
         </div>
@@ -323,13 +319,13 @@
         </div>
         <p id="clear-msg" class="new-record" hidden></p>
         <div id="rank-form">
-          <input type="text" id="nickname-input" placeholder="닉네임 (최대 10자)" maxlength="10" autocomplete="off" enterkeyhint="done" />
+          <input type="text" id="nickname-input" placeholder="랭킹에 쓸 이름 (최대 10자)" maxlength="10" autocomplete="off" enterkeyhint="done" />
           <p id="nickname-error" class="input-error" hidden>이름을 남겨주세요!</p>
-          <button class="btn outline wide" onclick="saveRanking()">🏆 랭킹 등록</button>
+          <button class="btn outline wide" onclick="saveRanking()">🏆 이름 등록하고 랭킹 보기</button>
         </div>
         <div id="rank-done" class="rank-done" hidden>
           <span id="rank-done-text"></span>
-          <button class="btn small ghost" onclick="showRankingScreen(gameMode, gameLevel, currentStage, 'stage')">보기</button>
+          <button class="btn small ghost" onclick="showRankingScreen(gameMode, gameLevel, 'stage')">보기</button>
         </div>
         <button id="clear-next" class="btn primary wide" onclick="nextStage()">다음 단계 ▶</button>
         <div class="btn-row">

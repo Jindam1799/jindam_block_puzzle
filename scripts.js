@@ -80,7 +80,7 @@ function cycleSound() {
   updateSoundUI();
   toast(SOUND_TOAST[soundMode]);
   if (bgmOn()) resumeBGM();
-  else bgmEl.pause();
+  else pauseBGM();
   if (!sfxOn() && 'speechSynthesis' in window) speechSynthesis.cancel();
 }
 
@@ -100,21 +100,48 @@ let bgmType = null;
 let bgmIndex = 0;
 let audioUnlocked = false;
 
-bgmEl.addEventListener('ended', () => {
-  const list = BGM_LIST[bgmType] || [];
-  if (list.length > 1) {
-    bgmIndex = (bgmIndex + 1) % list.length;
-    startTrack();
-  }
-});
+const bgmWanted = () => !!bgmType && bgmOn() && audioUnlocked && !document.hidden;
+let bgmRetryTimer = 0;
 
-function startTrack() {
+function nextTrack() {
+  const list = BGM_LIST[bgmType] || [];
+  bgmIndex = (bgmIndex + 1) % Math.max(1, list.length);
+  startTrack(true);
+}
+// 곡이 끝나면 다음 곡 (한 곡짜리는 loop 로 반복)
+bgmEl.addEventListener('ended', () => {
+  if ((BGM_LIST[bgmType] || []).length > 1) nextTrack();
+  else resumeBGM();
+});
+// 파일을 못 읽으면(네트워크 끊김 등) 잠시 뒤 다음 곡으로
+bgmEl.addEventListener('error', () => {
+  clearTimeout(bgmRetryTimer);
+  bgmRetryTimer = setTimeout(() => bgmWanted() && nextTrack(), 1500);
+});
+// ★ 핵심 수정: 중국어 음성(TTS)·전화·다른 앱 소리 때문에 브라우저가 BGM을
+//   멋대로 멈추는 경우가 있음(특히 아이폰/안드로이드). 우리가 멈춘 게 아니면 다시 재생.
+let bgmPausedByUs = false;
+bgmEl.addEventListener('pause', () => {
+  if (bgmPausedByUs || bgmEl.ended) return;
+  clearTimeout(bgmRetryTimer);
+  bgmRetryTimer = setTimeout(resumeBGM, 600);
+});
+function pauseBGM() {
+  bgmPausedByUs = true;
+  bgmEl.pause();
+  bgmPausedByUs = false;
+}
+
+function startTrack(forceReload = false) {
   const list = BGM_LIST[bgmType];
-  if (!list || !bgmOn() || !audioUnlocked) return;
+  if (!list || !bgmWanted()) return;
   bgmEl.loop = list.length === 1;
   const src = list[bgmIndex];
-  if (!bgmEl.src.endsWith(src)) bgmEl.src = src;
-  else bgmEl.currentTime = 0;
+  if (forceReload || !bgmEl.src.endsWith('/' + src)) {
+    bgmEl.src = src;
+  } else {
+    bgmEl.currentTime = 0;
+  }
   bgmEl.play().catch(() => {});
 }
 function playBGM(type) {
@@ -122,19 +149,25 @@ function playBGM(type) {
   bgmType = type;
   const list = BGM_LIST[type];
   bgmIndex = list.length > 1 ? Math.floor(Math.random() * list.length) : 0;
-  bgmEl.pause();
+  pauseBGM();
   startTrack();
 }
 function resumeBGM() {
-  if (!bgmType || !bgmOn() || !audioUnlocked) return;
-  if (bgmEl.src) bgmEl.play().catch(() => {});
-  else startTrack();
+  if (!bgmWanted() || !bgmEl.paused) return;
+  const list = BGM_LIST[bgmType] || [];
+  // 지금 걸린 곡이 현재 모드 곡이 아니면 새로 시작
+  if (!bgmEl.src || !list.some((f) => bgmEl.src.endsWith('/' + f))) return startTrack();
+  bgmEl.play().catch(() => {});
 }
-// 앱 전환/화면 꺼짐 시 일시정지
+// 앱 전환/화면 꺼짐 시 일시정지, 돌아오면 재생
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden) bgmEl.pause();
+  if (document.hidden) pauseBGM();
   else resumeBGM();
 });
+// 안전장치: 3초마다 "재생돼야 하는데 멈춰 있으면" 다시 재생
+setInterval(() => {
+  if (bgmWanted() && bgmEl.paused && !bgmEl.seeking) resumeBGM();
+}, 3000);
 
 // ==========================================
 // ★ 효과음 (Web Audio) — 첫 터치 때 생성, 마스터 볼륨 ★
@@ -258,6 +291,7 @@ function speakChinese(text) {
     if (zhVoice) u.voice = zhVoice;
     u.rate = 0.85;
     u.volume = 1;
+    u.onend = u.onerror = () => setTimeout(resumeBGM, 200); // 음성 뒤 BGM 복구
     speechSynthesis.resume();
     speechSynthesis.speak(u);
   }, 40);
@@ -453,22 +487,20 @@ function startSheetStage() {
 }
 function stageRanking() {
   closeStageSheet();
-  showRankingScreen(gameMode, gameLevel, sheetStage);
+  showRankingScreen(gameMode, gameLevel, 'stage');
 }
 
 // ==========================================
-// ★ 랭킹 (단계별) ★
+// ★ 랭킹 (모드·급수별 누적: 클리어한 단계들의 최고점 합계) ★
 // ==========================================
 let currentRankMode = 'normal';
 let currentRankLevel = 'hsk4';
-let currentRankStage = 1;
-let lastSavedId = null; // 방금 등록한 기록만 강조
 let rankBackTo = 'lobby';
+const DAY = 86400000;
+const rivalKey = (mode, level) => `hskblock_rivals_total_${mode}_${level}`;
+const getNick = () => store.get('hskblock_last_nick', '');
 
-const rankKey = (mode, level, stage) => `hskblock_rank_${mode}_${level}_s${stage}`;
-const rivalKey = (mode, level, stage) => `hskblock_rival_${mode}_${level}_s${stage}`;
-
-// 라이벌 기록 (단계마다 이름·점수가 다르게, 한 번 정해지면 고정)
+// 라이벌 이름 (학생 닉네임처럼)
 const RIVAL_NAMES = [
   '하늘별', '민준', '서윤', '판다곰', '만두왕', '탕후루', '지호', '하은', '도윤', '열공러',
   '샤오룽', '니하오', '수아', '공부벌레', '예준', '은우', '지아', '월병', '용용이', '훠궈',
@@ -485,30 +517,6 @@ function seededRandom(seedText) {
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
 }
-function getRivals(mode, level, stage) {
-  const key = rivalKey(mode, level, stage);
-  let rivals = store.get(key, null);
-  if (!rivals) {
-    const rnd = seededRandom(key);
-    const words = stageWords(mode, level, stage).length || STAGE_SIZE[mode];
-    // 실제 플레이 시뮬레이션 기준: 노말 25단어 ≈ 3만~5만점, 헬 100단어 ≈ 25만~40만점
-    const perWord = mode === 'hell' ? 3300 : 1650;
-    const base = perWord * words * (1 + Math.min(stage, 60) * 0.004);
-    const names = shuffleSeeded([...RIVAL_NAMES], rnd).slice(0, 3);
-    const day = new Date();
-    rivals = [1.0, 0.8, 0.62].map((f, i) => {
-      const d = new Date(day.getTime() - Math.floor(rnd() * 20 + i) * 86400000);
-      return {
-        name: names[i],
-        score: Math.round((base * f * (0.9 + rnd() * 0.2)) / 10) * 10,
-        combo: Math.max(3, Math.round((mode === 'hell' ? 30 : 14) * f * (0.8 + rnd() * 0.4))),
-        date: d.toLocaleDateString(),
-      };
-    });
-    store.set(key, rivals);
-  }
-  return rivals.map((r) => ({ ...r, isPlayer: false }));
-}
 function shuffleSeeded(arr, rnd) {
   for (let i = arr.length - 1; i > 0; i--) {
     const j = Math.floor(rnd() * (i + 1));
@@ -516,24 +524,88 @@ function shuffleSeeded(arr, rnd) {
   }
   return arr;
 }
-// 학생이 라이벌을 앞지르면 가끔 라이벌도 기록을 올림 (경쟁감 유지)
-function growRivals(mode, level, stage, playerScore) {
-  const key = rivalKey(mode, level, stage);
-  const rivals = store.get(key, null);
-  if (!rivals) return;
-  rivals.forEach((r, i) => {
-    if (r.score < playerScore && Math.random() < (i === 0 ? 0.35 : 0.2)) {
-      r.score = Math.round((playerScore * (1.02 + Math.random() * 0.1)) / 10) * 10;
-      r.date = new Date().toLocaleDateString();
-    }
-  });
-  store.set(key, rivals);
-}
-function rankingRows(mode, level, stage) {
-  const players = store.get(rankKey(mode, level, stage), []);
-  return [...players, ...getRivals(mode, level, stage)].sort((a, b) => b.score - a.score).slice(0, 15);
+// 단계 하나 클리어 점수 추정치 (실제 플레이 시뮬레이션 기준: 노말 25단어 ≈ 3~5만, 헬 100단어 ≈ 25~40만)
+function stageScoreEstimate(mode, level, stage) {
+  const words = stageWords(mode, level, stage).length || STAGE_SIZE[mode];
+  const perWord = mode === 'hell' ? 3300 : 1650;
+  return perWord * words * (1 + Math.min(stage, 60) * 0.004);
 }
 
+// 라이벌: 처음 본 날부터 하루하루 단계를 깨 나감 (속도·출발점이 서로 다름)
+function loadRivals(mode, level) {
+  const key = rivalKey(mode, level);
+  let rivals = store.get(key, null);
+  if (!rivals) {
+    const rnd = seededRandom(key);
+    const names = shuffleSeeded([...RIVAL_NAMES], rnd).slice(0, 7);
+    const total = stageCount(mode, level);
+    const now = Date.now();
+    const perDay = mode === 'hell' ? 0.25 : 1; // 헬은 단계가 길어서 느리게
+    rivals = names.map((name, i) => ({
+      name,
+      start: now,
+      base: Math.max(0, Math.round(total * [0.12, 0.08, 0.06, 0.04, 0.02, 0.01, 0][i] + rnd() * 2) - (i > 4 ? 1 : 0)),
+      speed: perDay * (0.25 + rnd() * 0.9),
+      skill: 0.75 + rnd() * 0.45,
+      bonus: 0,
+    }));
+    store.set(key, rivals);
+  }
+  return rivals;
+}
+function rivalRows(mode, level) {
+  const total = stageCount(mode, level);
+  const now = Date.now();
+  return loadRivals(mode, level)
+    .map((r) => {
+      const days = Math.max(0, (now - r.start) / DAY);
+      const cleared = clamp(Math.floor(r.base + r.bonus + r.speed * days), 0, total);
+      let sum = 0;
+      for (let s = 1; s <= cleared; s++) sum += stageScoreEstimate(mode, level, s) * r.skill;
+      return { name: r.name, cleared, score: Math.round(sum / 10) * 10, stars: Math.round(cleared * (1.6 + r.skill)), isPlayer: false };
+    })
+    .filter((r) => r.cleared > 0);
+}
+function playerRow(mode, level) {
+  const prog = levelProgress(mode, level);
+  let cleared = 0;
+  let sum = 0;
+  let stars = 0;
+  for (const k of Object.keys(prog)) {
+    if (!/^\d+$/.test(k)) continue;
+    cleared++;
+    sum += prog[k].best;
+    stars += prog[k].stars;
+  }
+  if (!cleared) return null;
+  return { name: getNick() || '나', cleared, score: sum, stars, isPlayer: true };
+}
+function rankingRows(mode, level) {
+  const me = playerRow(mode, level);
+  return [...rivalRows(mode, level), ...(me ? [me] : [])].sort((a, b) => b.score - a.score);
+}
+function myRank(mode, level) {
+  return rankingRows(mode, level).findIndex((r) => r.isPlayer) + 1;
+}
+// 학생이 라이벌을 앞지르면 가끔 그 라이벌도 단계를 더 깸 (경쟁감 유지)
+function nudgeRivals(mode, level) {
+  const me = playerRow(mode, level);
+  if (!me) return;
+  const rivals = loadRivals(mode, level);
+  const rows = rivalRows(mode, level);
+  rivals.forEach((r) => {
+    const row = rows.find((x) => x.name === r.name);
+    const cleared = row ? row.cleared : 0;
+    if (cleared < me.cleared && cleared >= me.cleared - 2 && Math.random() < 0.3) r.bonus += 1;
+  });
+  store.set(rivalKey(mode, level), rivals);
+}
+
+function updateRankBox(beforeRank) {
+  const rank = myRank(gameMode, gameLevel);
+  const up = beforeRank > 0 && rank > 0 && rank < beforeRank ? ` (▲${beforeRank - rank})` : '';
+  $('rank-done-text').textContent = rank > 0 ? `🏆 ${levelLabel(gameLevel)}급 누적 랭킹 ${rank}위${up}` : '';
+}
 function saveRanking() {
   const input = $('nickname-input');
   const nickname = input.value.trim();
@@ -543,27 +615,12 @@ function saveRanking() {
     return;
   }
   store.set('hskblock_last_nick', nickname);
-  const key = rankKey(gameMode, gameLevel, currentStage);
-  const list = store.get(key, []);
-  lastSavedId = Date.now();
-  list.push({
-    id: lastSavedId,
-    name: nickname,
-    score,
-    combo: maxComboThisRound,
-    date: new Date().toLocaleDateString(),
-    isPlayer: true,
-  });
-  list.sort((a, b) => b.score - a.score);
-  store.set(key, list.slice(0, 30));
-  const rank = rankingRows(gameMode, gameLevel, currentStage).findIndex((r) => r.id === lastSavedId) + 1;
-  growRivals(gameMode, gameLevel, currentStage, score);
   $('rank-form').hidden = true;
   $('rank-done').hidden = false;
-  $('rank-done-text').textContent = rank > 0 ? `🏆 ${currentStage}단계 랭킹 ${rank}위로 등록했어요!` : '랭킹에 등록했어요!';
+  updateRankBox(0);
 }
 
-function showRankingScreen(mode = 'normal', level = 'hsk4', stage = 1, backTo) {
+function showRankingScreen(mode = 'normal', level = 'hsk4', backTo) {
   rankBackTo = backTo || ($('stage-screen').classList.contains('active') ? 'stage' : 'lobby');
   document.querySelectorAll('.modal.active').forEach((m) => m.classList.remove('active'));
   showScreen('ranking-screen');
@@ -571,26 +628,18 @@ function showRankingScreen(mode = 'normal', level = 'hsk4', stage = 1, backTo) {
   playBGM('leaderboard');
   currentRankMode = mode;
   currentRankLevel = level;
-  currentRankStage = stage;
   renderRankingList();
 }
 function openRankingFromLobby() {
-  const p = levelProgress('normal', 'hsk4');
-  showRankingScreen('normal', 'hsk4', p.last || 1, 'lobby');
+  const last = store.get('hskblock_last_level', { mode: 'normal', level: 'hsk4' });
+  showRankingScreen(last.mode, last.level, 'lobby');
 }
 function changeRankMode(mode) {
   currentRankMode = mode;
-  currentRankStage = levelProgress(mode, currentRankLevel).last || 1;
   renderRankingList();
 }
 function changeRankLevel(level) {
   currentRankLevel = level;
-  currentRankStage = levelProgress(currentRankMode, level).last || 1;
-  renderRankingList();
-}
-function changeRankStage(delta) {
-  const total = stageCount(currentRankMode, currentRankLevel);
-  currentRankStage = clamp(currentRankStage + delta, 1, total);
   renderRankingList();
 }
 
@@ -599,25 +648,22 @@ function renderRankingList() {
   $('tab-hell').classList.toggle('active', currentRankMode === 'hell');
   ['hsk4', 'hsk5', 'hsk6'].forEach((l) => $(`tab-rank-${l}`).classList.toggle('active', currentRankLevel === l));
   const total = stageCount(currentRankMode, currentRankLevel);
-  currentRankStage = clamp(currentRankStage, 1, Math.max(1, total));
-  $('rank-stage-label').textContent = `${currentRankStage}단계`;
-  $('rank-prev').disabled = currentRankStage <= 1;
-  $('rank-next').disabled = currentRankStage >= total;
 
-  const all = rankingRows(currentRankMode, currentRankLevel, currentRankStage);
+  const all = rankingRows(currentRankMode, currentRankLevel);
   const listEl = $('ranking-list');
   if (!all.length) {
-    listEl.innerHTML = '<li class="rk-empty">등록된 랭킹이 없습니다.</li>';
+    listEl.innerHTML = '<li class="rk-empty">아직 기록이 없어요. 1단계를 클리어해 보세요!</li>';
     return;
   }
   listEl.innerHTML = all
+    .slice(0, 20)
     .map((r, i) => {
-      const cls = ['ranking-item', i < 3 ? `top${i + 1}` : '', lastSavedId && r.id === lastSavedId ? 'me' : ''].join(' ');
+      const cls = ['ranking-item', i < 3 ? `top${i + 1}` : '', r.isPlayer ? 'me' : ''].join(' ');
       const medal = ['🥇', '🥈', '🥉'][i] || i + 1;
       return `<li class="${cls}">
         <span class="rk-no">${medal}</span>
-        <span class="rk-name">${escapeHTML(r.name)}<small>${escapeHTML(r.date || '')}</small></span>
-        <span class="rk-score">${Number(r.score).toLocaleString()}<small>MAX ${r.combo} COMBO</small></span>
+        <span class="rk-name">${escapeHTML(r.name)}<small>${r.cleared} / ${total}단계 클리어</small></span>
+        <span class="rk-score">${Number(r.score).toLocaleString()}<small>★ ${r.stars}</small></span>
       </li>`;
     })
     .join('');
@@ -820,6 +866,7 @@ function startGame(mode, level, stage = 1) {
   currentStage = stage;
   gameSession++;
   setLastStage(mode, level, stage);
+  store.set('hskblock_last_level', { mode, level });
 
   document.body.className = `theme-${mode} theme-${level}`;
   const levelText = level.toUpperCase().replace('HSK', 'HSK ');
@@ -1437,7 +1484,9 @@ function stageClear() {
   isGameOver = true;
   isGameLocked = true;
   const stars = starsFor(gameMode, wrongCount);
+  const rankBefore = myRank(gameMode, gameLevel);
   const { isBest, firstClear } = saveStageClear(gameMode, gameLevel, currentStage, stars, score);
+  nudgeRivals(gameMode, gameLevel);
   playBGM('leaderboard');
   flashScreen('#fff3b0', 0.7);
 
@@ -1454,10 +1503,13 @@ function stageClear() {
   $('clear-msg').textContent = msgs.join('  ');
   $('clear-msg').hidden = !msgs.length;
   $('clear-next').hidden = currentStage >= total;
-  $('rank-form').hidden = false;
-  $('rank-done').hidden = true;
-  $('nickname-input').value = store.get('hskblock_last_nick', '');
+  // 이름이 있으면 바로 누적 순위 표시, 처음이면 이름 입력
+  const hasNick = !!getNick();
+  $('rank-form').hidden = hasNick;
+  $('rank-done').hidden = !hasNick;
+  $('nickname-input').value = '';
   $('nickname-error').hidden = true;
+  if (hasNick) updateRankBox(rankBefore);
   $('stage-clear-modal').classList.add('active');
 }
 

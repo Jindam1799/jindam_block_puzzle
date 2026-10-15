@@ -1599,3 +1599,9 @@ body.theme-hell #board-wrapper {
     padding: 3px 7px;
   }
 }
+.rank-desc {
+  text-align: center;
+  font-size: 13px;
+  color: var(--muted);
+  margin: -4px 0 -2px;
+}
